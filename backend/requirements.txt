@@ -7,3 +7,4 @@ yfinance
 pandas
 google-generativeai
 python-jose[cryptography]
+email-validator
