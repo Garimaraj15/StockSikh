@@ -1,0 +1,74 @@
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+    background-color: #F9F8F6;
+}
+
+body {
+    margin: 0;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    color: #1C1C1C;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: red !important;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Outfit', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+}
+
+code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, \"Courier New\", monospace;
+}
+
+
+
+/* Custom focus ring */
+*:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(217, 108, 91, 0.35);
+    border-radius: 8px;
+}
+
+/* Card hover lift */
+.card-hover {
+    transition: transform 300ms ease-out, box-shadow 300ms ease-out;
+}
+.card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+/* Subtle grain on hero */
+.bg-grain {
+    background-image:
+        radial-gradient(ellipse at top left, rgba(26, 54, 38, 0.06), transparent 50%),
+        radial-gradient(ellipse at bottom right, rgba(217, 108, 91, 0.08), transparent 50%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E5E3DB; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #C8C5BC; }
+
+/* Recharts axis */
+.recharts-cartesian-axis-tick-value {
+    fill: #71717A !important;
+    font-size: 11px;
+    font-family: 'Manrope', sans-serif;
+}
+.recharts-tooltip-wrapper {
+    outline: none !important;
+}
+
+@layer base {
+    [data-debug-wrapper=\"true\"] {
+        display: contents !important;
+    }
+}
