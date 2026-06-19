@@ -3,8 +3,9 @@ uvicorn
 sqlalchemy
 pymysql
 python-dotenv
-yfinance
-pandas
-google-generativeai
 python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+google-generativeai
+python-multipart
 email-validator
