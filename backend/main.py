@@ -1,8 +1,9 @@
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from database.database import engine, Base
 from models.user import User
@@ -88,6 +89,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def normalize_path_slashes(request: Request, call_next):
+    raw_path = request.scope.get("path", "")
+    if "//" in raw_path:
+        request.scope["path"] = re.sub(r"/+", "/", raw_path)
+    return await call_next(request)
 
 # Register All Subsystems
 app.include_router(auth_router)
