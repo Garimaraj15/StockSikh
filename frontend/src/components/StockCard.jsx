@@ -27,9 +27,9 @@ export default function StockCard({ stock, index = 0 }) {
     <Link
       to={`/stock/${encodeURIComponent(stock.symbol)}`}
       data-testid={`stock-card-${stock.symbol}`}
-      className="block group"
+      className="block group h-full"
     >
-      <div className="groww-card p-5 h-full flex flex-col justify-between">
+      <div className="p-5 h-full rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.08] hover:border-[#00D09C]/40 backdrop-blur-xl transition-all duration-300 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:shadow-[0_0_25px_rgba(0,208,156,0.15)] hover:-translate-y-1 flex flex-col justify-between">
         {/* Top Row: Symbol Avatar & Signal Badge */}
         <div>
           <div className="flex items-start justify-between gap-2 mb-3">
