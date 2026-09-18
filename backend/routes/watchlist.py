@@ -1,10 +1,11 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import yfinance as yf
 
 from database.database import get_db
-from models.watchlist import Watchlist
+from models.watchlist import Watchlist, PriceAlert
 from models.user import User
 from routes.auth import get_current_user
 from routes.stocks import calculate_technical_signals
@@ -13,6 +14,12 @@ router = APIRouter(
     prefix="/watchlist",
     tags=["Watchlist"]
 )
+
+class CreateAlertRequest(BaseModel):
+    symbol: str
+    target_price: float
+    condition: Optional[str] = "ABOVE"
+
 
 @router.get("/test")
 def test():
@@ -215,3 +222,111 @@ def remove_watchlist_by_symbol(
         "message": "Removed Successfully",
         "symbol": clean_symbol
     }
+
+
+# ─── Price Alerts (Authenticated User) ───────────────────────────────────────
+
+@router.get("/alerts")
+def get_user_price_alerts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    alerts = (
+        db.query(PriceAlert)
+        .filter(PriceAlert.user_id == current_user.id)
+        .order_by(PriceAlert.created_at.desc())
+        .all()
+    )
+    return {
+        "alerts": [
+            {
+                "id": a.id,
+                "symbol": a.symbol,
+                "target_price": a.target_price,
+                "condition": a.condition,
+                "is_triggered": a.is_triggered,
+                "created_at": a.created_at.isoformat() if a.created_at else None
+            }
+            for a in alerts
+        ]
+    }
+
+
+@router.post("/alert")
+def create_price_alert(
+    req: CreateAlertRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    symbol = req.symbol.strip().upper()
+    if req.target_price <= 0:
+        raise HTTPException(status_code=400, detail="Target price must be greater than 0")
+
+    cond = req.condition.upper() if req.condition else "ABOVE"
+    if cond not in ["ABOVE", "BELOW"]:
+        cond = "ABOVE"
+
+    # Check for duplicate active alert
+    existing = (
+        db.query(PriceAlert)
+        .filter(
+            PriceAlert.user_id == current_user.id,
+            PriceAlert.symbol == symbol,
+            PriceAlert.condition == cond,
+            PriceAlert.is_triggered == False
+        )
+        .first()
+    )
+    if existing:
+        existing.target_price = req.target_price
+        db.commit()
+        return {
+            "message": f"Updated price alert for {symbol} to ₹{req.target_price:,.2f}",
+            "alert": {
+                "id": existing.id,
+                "symbol": existing.symbol,
+                "target_price": existing.target_price,
+                "condition": existing.condition
+            }
+        }
+
+    alert = PriceAlert(
+        user_id=current_user.id,
+        symbol=symbol,
+        target_price=req.target_price,
+        condition=cond,
+        is_triggered=False
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+
+    return {
+        "message": f"Price alert set for {symbol} when price goes {cond.lower()} ₹{req.target_price:,.2f}",
+        "alert": {
+            "id": alert.id,
+            "symbol": alert.symbol,
+            "target_price": alert.target_price,
+            "condition": alert.condition
+        }
+    }
+
+
+@router.delete("/alert/{alert_id}")
+def delete_price_alert(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    alert = (
+        db.query(PriceAlert)
+        .filter(PriceAlert.id == alert_id, PriceAlert.user_id == current_user.id)
+        .first()
+    )
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    db.delete(alert)
+    db.commit()
+    return {"message": "Price alert deleted successfully"}
+

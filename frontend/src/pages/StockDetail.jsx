@@ -26,7 +26,12 @@ import {
   Activity,
   Sparkles,
   ShieldCheck,
-  HelpCircle
+  HelpCircle,
+  Scale,
+  Bell,
+  X,
+  Search,
+  Loader2
 } from "lucide-react";
 
 const PERIODS = [
@@ -58,6 +63,73 @@ export default function StockDetail() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [showShieldModal, setShowShieldModal] = useState(false);
   const [tradeMode, setTradeMode] = useState("BUY");
+
+  // Peer Comparison State
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [peerSymbolInput, setPeerSymbolInput] = useState("");
+  const [peerData, setPeerData] = useState(null);
+  const [peerLoading, setPeerLoading] = useState(false);
+  const [peerError, setPeerError] = useState("");
+
+  // Price Alert State
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertTargetPrice, setAlertTargetPrice] = useState("");
+  const [alertCondition, setAlertCondition] = useState("ABOVE"); // "ABOVE" | "BELOW"
+  const [alertLoading, setAlertLoading] = useState(false);
+  const [alertSuccess, setAlertSuccess] = useState("");
+  const [alertError, setAlertError] = useState("");
+
+  const handleFetchPeer = async (sym) => {
+    const targetSym = (sym || peerSymbolInput).trim().toUpperCase();
+    if (!targetSym) return;
+    setPeerLoading(true);
+    setPeerError("");
+    setPeerData(null);
+    try {
+      const res = await axios.get(`${API}/stocks/${encodeURIComponent(targetSym)}`);
+      setPeerData(res.data);
+    } catch (err) {
+      setPeerError("Peer stock data unavailable. Please verify the symbol.");
+    } finally {
+      setPeerLoading(false);
+    }
+  };
+
+  const handleSavePriceAlert = async (e) => {
+    e.preventDefault();
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    const target = parseFloat(alertTargetPrice);
+    if (isNaN(target) || target <= 0) {
+      setAlertError("Please enter a valid target price greater than 0.");
+      return;
+    }
+    setAlertLoading(true);
+    setAlertError("");
+    setAlertSuccess("");
+    try {
+      const res = await axios.post(
+        `${API}/watchlist/alert`,
+        {
+          symbol: decoded,
+          target_price: target,
+          condition: alertCondition
+        },
+        authConfig()
+      );
+      setAlertSuccess(res.data?.message || "Price alert configured successfully!");
+      setTimeout(() => {
+        setShowAlertModal(false);
+        setAlertSuccess("");
+      }, 2000);
+    } catch (err) {
+      setAlertError(err.response?.data?.detail || "Failed to set price alert.");
+    } finally {
+      setAlertLoading(false);
+    }
+  };
 
   // Load stock details
   useEffect(() => {
@@ -254,6 +326,22 @@ export default function StockDetail() {
                   className="px-5 py-3 rounded-full bg-[#EF4444]/15 hover:bg-[#EF4444]/25 text-[#EF4444] border border-[#EF4444]/30 font-black text-sm transition-all cursor-pointer"
                 >
                   SELL
+                </button>
+
+                <button
+                  onClick={() => setShowCompareModal(true)}
+                  className="px-4 py-3 rounded-full bg-[#111827] hover:bg-white/[0.08] text-white border border-white/[0.1] font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  title="Compare with Peer Stock"
+                >
+                  <Scale className="w-4 h-4 text-[#38BDF8]" /> Compare
+                </button>
+
+                <button
+                  onClick={() => setShowAlertModal(true)}
+                  className="p-3 rounded-full bg-[#111827] hover:bg-white/[0.08] text-[#94A3B8] hover:text-[#F59E0B] border border-white/[0.1] transition-all cursor-pointer"
+                  title="Set Custom Price Alert"
+                >
+                  <Bell className="w-4 h-4" />
                 </button>
 
                 <button
@@ -667,6 +755,247 @@ export default function StockDetail() {
         onClose={() => setShowTradeModal(false)}
         onTradeComplete={() => {}}
       />
+
+      {/* Peer Comparison Modal */}
+      {showCompareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-[#0F172A] border border-white/[0.1] rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#38BDF8]/10 text-[#38BDF8] flex items-center justify-center">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-xl text-white">
+                    Compare with Peer Stock
+                  </h3>
+                  <p className="text-xs text-[#94A3B8]">
+                    Side-by-side live metrics and technical indicators.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCompareModal(false);
+                  setPeerData(null);
+                  setPeerError("");
+                }}
+                className="p-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Peer Stock Selector */}
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-slate-300">Select Peer Stock to Compare:</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={peerSymbolInput}
+                  onChange={(e) => setPeerSymbolInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleFetchPeer();
+                    }
+                  }}
+                  placeholder="e.g. TCS, INFY, HDFCBANK, TATAMOTORS..."
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[#0B0F17] border border-white/[0.1] focus:border-[#38BDF8] text-sm text-white placeholder-[#64748B] outline-none"
+                />
+                <button
+                  onClick={() => handleFetchPeer()}
+                  disabled={peerLoading || !peerSymbolInput.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-[#38BDF8] hover:bg-[#0284C7] disabled:opacity-50 text-[#07090E] font-black text-xs transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  {peerLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  Compare
+                </button>
+              </div>
+
+              {/* Quick Peer Suggestion Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-[10px] text-[#64748B] font-bold">Quick Peers:</span>
+                {["TCS.NS", "RELIANCE.NS", "INFY.NS", "HDFCBANK.NS", "SBIN.NS", "TATAMOTORS.NS"]
+                  .filter((s) => s.toUpperCase() !== decoded.toUpperCase())
+                  .slice(0, 4)
+                  .map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setPeerSymbolInput(s);
+                        handleFetchPeer(s);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-[#38BDF8]/10 hover:text-[#38BDF8] border border-white/[0.06] text-[10px] font-bold text-slate-400 transition-colors cursor-pointer"
+                    >
+                      {s.replace(".NS", "")}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            {peerError && (
+              <div className="p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs font-semibold text-[#EF4444]">
+                {peerError}
+              </div>
+            )}
+
+            {/* Comparison Side-by-Side Table */}
+            {peerData && (
+              <div className="rounded-2xl border border-white/[0.08] bg-[#0B0F17] overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/[0.08] bg-white/[0.02]">
+                      <th className="py-3 px-4 text-[#94A3B8] font-bold uppercase tracking-wider">Metric</th>
+                      <th className="py-3 px-4 font-black text-[#00D09C]">{data?.name || decoded}</th>
+                      <th className="py-3 px-4 font-black text-[#38BDF8]">{peerData.name || peerSymbolInput}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">Current Price</td>
+                      <td className="py-3 px-4 font-extrabold text-white">₹{data?.price?.toLocaleString("en-IN") || "—"}</td>
+                      <td className="py-3 px-4 font-extrabold text-white">₹{peerData.price?.toLocaleString("en-IN") || "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">Day Change (%)</td>
+                      <td className={`py-3 px-4 font-bold ${data?.change >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>
+                        {data?.change >= 0 ? "+" : ""}{data?.change_percent?.toFixed(2)}%
+                      </td>
+                      <td className={`py-3 px-4 font-bold ${peerData.change >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>
+                        {peerData.change >= 0 ? "+" : ""}{peerData.change_percent?.toFixed(2)}%
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">RSI (14)</td>
+                      <td className="py-3 px-4 font-bold text-white">{data?.rsi ? data.rsi.toFixed(1) : "—"}</td>
+                      <td className="py-3 px-4 font-bold text-white">{peerData.rsi ? peerData.rsi.toFixed(1) : "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">20-Day MA</td>
+                      <td className="py-3 px-4 font-semibold text-[#CBD5E1]">₹{data?.ma20 ? data.ma20.toFixed(2) : "—"}</td>
+                      <td className="py-3 px-4 font-semibold text-[#CBD5E1]">₹{peerData.ma20 ? peerData.ma20.toFixed(2) : "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">50-Day MA</td>
+                      <td className="py-3 px-4 font-semibold text-[#CBD5E1]">₹{data?.ma50 ? data.ma50.toFixed(2) : "—"}</td>
+                      <td className="py-3 px-4 font-semibold text-[#CBD5E1]">₹{peerData.ma50 ? peerData.ma50.toFixed(2) : "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">Technical Signal</td>
+                      <td className="py-3 px-4 font-black text-[#00D09C]">{data?.signal || "—"}</td>
+                      <td className="py-3 px-4 font-black text-[#38BDF8]">{peerData.signal || "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">AI Composite Score</td>
+                      <td className="py-3 px-4 font-black text-white">{data?.ai_score ? `${data.ai_score}/100` : "—"}</td>
+                      <td className="py-3 px-4 font-black text-white">{peerData.ai_score ? `${peerData.ai_score}/100` : "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-3 px-4 font-semibold text-[#94A3B8]">52W Range</td>
+                      <td className="py-3 px-4 text-[#CBD5E1]">₹{data?.fifty_two_week_low || "—"} - ₹{data?.fifty_two_week_high || "—"}</td>
+                      <td className="py-3 px-4 text-[#CBD5E1]">₹{peerData.fifty_two_week_low || "—"} - ₹{peerData.fifty_two_week_high || "—"}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Set Price Alert Modal */}
+      {showAlertModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-[#0F172A] border border-white/[0.1] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#F59E0B]/10 text-[#F59E0B] flex items-center justify-center">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-black text-lg text-white">
+                    Set Price Alert
+                  </h3>
+                  <p className="text-xs text-[#94A3B8]">
+                    {decoded.replace(".NS", "")} • Current: ₹{currentPrice.toLocaleString("en-IN")}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAlertModal(false)}
+                className="p-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-[#94A3B8] hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePriceAlert} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-2">Alert Condition:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAlertCondition("ABOVE")}
+                    className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      alertCondition === "ABOVE"
+                        ? "bg-[#00D09C] text-[#07090E] shadow-xs"
+                        : "bg-[#0B0F17] text-[#94A3B8] border border-white/[0.08]"
+                    }`}
+                  >
+                    Goes Above (▲)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlertCondition("BELOW")}
+                    className={`py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      alertCondition === "BELOW"
+                        ? "bg-[#EF4444] text-white shadow-xs"
+                        : "bg-[#0B0F17] text-[#94A3B8] border border-white/[0.08]"
+                    }`}
+                  >
+                    Goes Below (▼)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Target Price (₹):</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={alertTargetPrice}
+                  onChange={(e) => setAlertTargetPrice(e.target.value)}
+                  placeholder={`e.g. ${(currentPrice * 1.05).toFixed(2)}`}
+                  className="w-full px-4 py-3 rounded-xl bg-[#0B0F17] border border-white/[0.1] focus:border-[#00D09C] text-sm text-white font-extrabold outline-none"
+                  required
+                />
+              </div>
+
+              {alertError && (
+                <div className="p-3 rounded-xl bg-[#EF4444]/10 border border-[#EF4444]/30 text-xs text-[#EF4444] font-semibold">
+                  {alertError}
+                </div>
+              )}
+
+              {alertSuccess && (
+                <div className="p-3 rounded-xl bg-[#00D09C]/10 border border-[#00D09C]/30 text-xs text-[#00D09C] font-semibold">
+                  {alertSuccess}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={alertLoading}
+                className="w-full py-3.5 rounded-2xl bg-[#00D09C] hover:bg-[#00B386] text-[#07090E] font-black text-sm shadow-[0_0_20px_rgba(0,208,156,0.3)] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {alertLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+                Save Price Alert
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -330,22 +330,23 @@ class ReplyQueryRequest(BaseModel):
 @router.get("/queries")
 def get_queries(
     stock_symbol: Optional[str] = None,
+    filter_by: Optional[str] = "top_voted",
     offset: int = Query(0, ge=0),
     limit: int = Query(5, ge=1, le=50),
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Returns community trading questions ordered server-side by:
-    1. Upvote count DESC
-    2. Creation date DESC
+    Returns community trading questions ordered server-side by filter_by:
+    - top_voted: Upvote count DESC, Creation date DESC
+    - unanswered: reply_count == 0, Creation date DESC
+    - recent: Creation date DESC
     Supports pagination via offset & limit.
     """
     query = db.query(ProQuery)
     if stock_symbol and stock_symbol != "ALL":
         query = query.filter(ProQuery.stock_symbol == stock_symbol.upper())
 
-    total_count = query.count()
     records = query.all()
 
     if not records:
@@ -403,13 +404,27 @@ def get_queries(
             "created_at": str(r.created_at.strftime("%b %d, %H:%M")) if r.created_at else "Recently"
         })
 
-    # Server-side sort: 1. Upvotes DESC, 2. Created at DESC
-    results.sort(
-        key=lambda q: (
-            -(q["upvotes"] or 0),
-            q["created_at_dt"].timestamp() if q.get("created_at_dt") else 0
+    # Apply filter_by
+    if filter_by == "unanswered":
+        results = [q for q in results if q["reply_count"] == 0]
+        results.sort(
+            key=lambda q: q["created_at_dt"].timestamp() if q.get("created_at_dt") else 0,
+            reverse=True
         )
-    )
+    elif filter_by == "recent":
+        results.sort(
+            key=lambda q: q["created_at_dt"].timestamp() if q.get("created_at_dt") else 0,
+            reverse=True
+        )
+    else:  # default "top_voted"
+        results.sort(
+            key=lambda q: (
+                -(q["upvotes"] or 0),
+                -(q["created_at_dt"].timestamp() if q.get("created_at_dt") else 0)
+            )
+        )
+
+    total_filtered = len(results)
 
     # Clean internal dt before response
     for item in results:
@@ -419,8 +434,8 @@ def get_queries(
 
     return {
         "queries": paginated_results,
-        "total": total_count,
-        "has_more": (offset + len(paginated_results)) < total_count,
+        "total": total_filtered,
+        "has_more": (offset + len(paginated_results)) < total_filtered,
         "offset": offset,
         "limit": limit
     }

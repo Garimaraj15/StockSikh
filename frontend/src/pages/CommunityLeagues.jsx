@@ -375,6 +375,7 @@ export default function CommunityLeagues() {
   const [queriesLoading, setQueriesLoading] = useState(true);
   const [loadingMoreQueries, setLoadingMoreQueries] = useState(false);
   const [queriesError, setQueriesError] = useState("");
+  const [queryFilter, setQueryFilter] = useState("top_voted"); // "top_voted" | "unanswered" | "recent"
   const [expandedQuery, setExpandedQuery] = useState(null);
   const [showAskModal, setShowAskModal] = useState(false);
   const [replyTextMap, setReplyTextMap] = useState({});
@@ -435,15 +436,16 @@ export default function CommunityLeagues() {
     }
   }, [user, authConfig]);
 
-  const loadQueries = useCallback(async (reset = true) => {
+  const loadQueries = useCallback(async (reset = true, overrideFilter = null) => {
     if (!user) return;
+    const activeFilter = overrideFilter || queryFilter;
     if (reset) {
       setQueriesLoading(true);
       setQueriesError("");
     }
     try {
       const r = await axios.get(`${API}/community/queries`, {
-        params: { offset: 0, limit: 5 },
+        params: { offset: 0, limit: 5, filter_by: activeFilter },
         ...authConfig(),
       });
       setQueries(r.data?.queries || []);
@@ -455,7 +457,7 @@ export default function CommunityLeagues() {
     } finally {
       if (reset) setQueriesLoading(false);
     }
-  }, [user, authConfig]);
+  }, [user, authConfig, queryFilter]);
 
   const handleLoadMoreQueries = async () => {
     if (loadingMoreQueries || !hasMoreQueries) return;
@@ -463,7 +465,7 @@ export default function CommunityLeagues() {
     try {
       const currentOffset = queries.length;
       const r = await axios.get(`${API}/community/queries`, {
-        params: { offset: currentOffset, limit: 5 },
+        params: { offset: currentOffset, limit: 5, filter_by: queryFilter },
         ...authConfig(),
       });
       const newItems = r.data?.queries || [];
@@ -794,11 +796,14 @@ export default function CommunityLeagues() {
                     {pro.bio && (
                       <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{pro.bio}</p>
                     )}
-                    {pro.win_rate !== null && pro.win_rate !== undefined && (
-                      <p className="text-xs text-slate-400">
-                        Win rate (closed trades): <span className="font-extrabold text-[#00D09C]">{pro.win_rate.toFixed(1)}%</span>
-                      </p>
-                    )}
+                    <p className="text-xs text-slate-400">
+                      Win rate:{" "}
+                      {pro.win_rate !== null && pro.win_rate !== undefined ? (
+                        <span className="font-extrabold text-[#00D09C]">{pro.win_rate.toFixed(1)}%</span>
+                      ) : (
+                        <span className="text-slate-500 font-semibold italic">No closed trades</span>
+                      )}
+                    </p>
 
                     <div className="flex items-center gap-2 mt-auto pt-1">
                       <button
@@ -824,7 +829,7 @@ export default function CommunityLeagues() {
                 <div className="text-center pt-2">
                   <button
                     onClick={() => setShowAllPros(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#00D09C] hover:text-[#00D09C] transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#00D09C] hover:underline transition-colors cursor-pointer"
                   >
                     <span>More Pro Helpers ({pros.length})</span>
                     <span>→</span>
@@ -840,7 +845,7 @@ export default function CommunityLeagues() {
           <SectionHeader
             icon={HelpCircle}
             title="Community Questions"
-            subtitle="Popular discussions sorted by community upvotes."
+            subtitle="Explore real market doubts, trade analyses, and strategies."
             action={
               <button
                 onClick={() => loadQueries(true)}
@@ -852,6 +857,49 @@ export default function CommunityLeagues() {
               </button>
             }
           />
+
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+            <button
+              onClick={() => {
+                setQueryFilter("top_voted");
+                loadQueries(true, "top_voted");
+              }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                queryFilter === "top_voted"
+                  ? "bg-[#00D09C] text-[#07090E] shadow-[0_0_12px_rgba(0,208,156,0.3)]"
+                  : "bg-[#111827] text-slate-400 hover:text-white border border-white/[0.08]"
+              }`}
+            >
+              🔥 Top Voted
+            </button>
+            <button
+              onClick={() => {
+                setQueryFilter("unanswered");
+                loadQueries(true, "unanswered");
+              }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                queryFilter === "unanswered"
+                  ? "bg-[#00D09C] text-[#07090E] shadow-[0_0_12px_rgba(0,208,156,0.3)]"
+                  : "bg-[#111827] text-slate-400 hover:text-white border border-white/[0.08]"
+              }`}
+            >
+              ⏳ Needs an Answer
+            </button>
+            <button
+              onClick={() => {
+                setQueryFilter("recent");
+                loadQueries(true, "recent");
+              }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                queryFilter === "recent"
+                  ? "bg-[#00D09C] text-[#07090E] shadow-[0_0_12px_rgba(0,208,156,0.3)]"
+                  : "bg-[#111827] text-slate-400 hover:text-white border border-white/[0.08]"
+              }`}
+            >
+              ✨ Recent
+            </button>
+          </div>
 
           {queriesLoading ? (
             <div className="py-8 text-center text-xs font-semibold text-slate-400 flex items-center justify-center gap-2">
@@ -867,13 +915,13 @@ export default function CommunityLeagues() {
               <div className="w-12 h-12 rounded-2xl bg-[#1E293B]/60 flex items-center justify-center mx-auto mb-3">
                 <HelpCircle className="w-6 h-6 text-[#CBD5E1]" />
               </div>
-              <p className="text-sm font-bold text-white">No community questions yet.</p>
-              <p className="text-xs text-slate-500 mt-1">Be the first to ask the community.</p>
+              <p className="text-sm font-bold text-white">No community questions found in this category.</p>
+              <p className="text-xs text-slate-500 mt-1">Be the first to ask the community for insights.</p>
               <button
                 onClick={() => setShowAskModal(true)}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#00D09C] text-white font-bold text-xs hover:bg-[#00B386] transition-all cursor-pointer"
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#00D09C] text-[#07090E] font-bold text-xs hover:bg-[#00B386] transition-all cursor-pointer shadow-xs"
               >
-                <Plus className="w-3.5 h-3.5 text-[#00D09C]" /> Ask a Question
+                <Plus className="w-3.5 h-3.5" /> Ask a Question
               </button>
             </div>
           ) : (
@@ -882,6 +930,7 @@ export default function CommunityLeagues() {
                 {queries.map((q) => {
                   const isOpen = expandedQuery === q.id;
                   const replyText = replyTextMap[q.id] || "";
+                  const isAnswered = (q.replies || []).length > 0 || q.status === "RESOLVED";
                   return (
                     <div
                       key={q.id}
@@ -894,7 +943,7 @@ export default function CommunityLeagues() {
                           className={`flex flex-col items-center justify-center px-3 py-2 rounded-xl border transition-all shrink-0 cursor-pointer ${
                             q.has_upvoted
                               ? "bg-[#00D09C]/10 border-[#00D09C] text-[#00D09C] shadow-xs"
-                              : "bg-[#0F172A] border border-white/[0.1] border-white/[0.08] text-slate-400 hover:border-white/[0.15] hover:text-white"
+                              : "bg-[#0F172A] border border-white/[0.08] text-slate-400 hover:border-white/[0.15] hover:text-white"
                           }`}
                           title={q.has_upvoted ? "Remove upvote" : "Upvote this question"}
                         >
@@ -918,11 +967,11 @@ export default function CommunityLeagues() {
                               </span>
                             )}
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                              q.status === "RESOLVED"
+                              isAnswered
                                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                                 : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                             }`}>
-                              {q.status === "RESOLVED" ? "Answered" : "Open"}
+                              {isAnswered ? "Answered" : "Needs an answer"}
                             </span>
                           </div>
 
@@ -945,12 +994,13 @@ export default function CommunityLeagues() {
                           </div>
                         </div>
 
-                        {/* Expand Toggle */}
+                        {/* Expand Toggle CTA */}
                         <button
                           onClick={() => setExpandedQuery(isOpen ? null : q.id)}
-                          className="p-1.5 rounded-xl hover:bg-[#E2E8F0] text-slate-500 transition-colors shrink-0 cursor-pointer mt-1"
+                          className="px-3 py-1.5 rounded-xl border border-white/[0.08] bg-[#111827] hover:bg-white/[0.06] text-xs font-bold text-slate-300 flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer mt-1"
                         >
-                          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          <span>{isOpen ? "Close" : "View Discussion"}</span>
+                          {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
                       </div>
 

@@ -15,7 +15,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Activity,
-  Layers
+  Layers,
+  Download,
+  PieChart
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -67,6 +69,39 @@ function StockHistoryTooltip({ active, payload, label }) {
     </div>
   );
 }
+
+const STOCK_SECTOR_MAP = {
+  "RELIANCE": "Energy & Oil",
+  "RELIANCE.NS": "Energy & Oil",
+  "TCS": "IT & Technology",
+  "TCS.NS": "IT & Technology",
+  "INFY": "IT & Technology",
+  "INFY.NS": "IT & Technology",
+  "WIPRO": "IT & Technology",
+  "WIPRO.NS": "IT & Technology",
+  "HDFCBANK": "Banking & Finance",
+  "HDFCBANK.NS": "Banking & Finance",
+  "ICICIBANK": "Banking & Finance",
+  "ICICIBANK.NS": "Banking & Finance",
+  "SBIN": "Banking & Finance",
+  "SBIN.NS": "Banking & Finance",
+  "BAJFINANCE": "Financial Services",
+  "BAJFINANCE.NS": "Financial Services",
+  "TATAMOTORS": "Automobile",
+  "TATAMOTORS.NS": "Automobile",
+  "MARUTI": "Automobile",
+  "MARUTI.NS": "Automobile",
+  "ITC": "FMCG",
+  "ITC.NS": "FMCG",
+  "SUNPHARMA": "Healthcare & Pharma",
+  "SUNPHARMA.NS": "Healthcare & Pharma",
+  "LT": "Infrastructure",
+  "LT.NS": "Infrastructure",
+  "BHARTIARTL": "Telecom",
+  "BHARTIARTL.NS": "Telecom",
+  "ZOMATO": "Consumer Tech",
+  "ZOMATO.NS": "Consumer Tech"
+};
 
 export default function VirtualPortfolio() {
   const { authConfig } = useAuth();
@@ -188,6 +223,61 @@ export default function VirtualPortfolio() {
     }))
   } : null;
 
+  const sectorAllocation = React.useMemo(() => {
+    if (!holdings || holdings.length === 0 || currentHoldingsValue <= 0) return [];
+    const sectorTotals = {};
+    holdings.forEach((h) => {
+      const sym = (h.symbol || "").toUpperCase();
+      const cleanSym = sym.replace(".NS", "").replace(".BO", "");
+      const sector = STOCK_SECTOR_MAP[sym] || STOCK_SECTOR_MAP[cleanSym] || "Other Equities";
+      sectorTotals[sector] = (sectorTotals[sector] || 0) + (h.current_value || 0);
+    });
+    const colors = ["#00D09C", "#38BDF8", "#818CF8", "#F59E0B", "#EC4899", "#A78BFA", "#34D399"];
+    return Object.entries(sectorTotals)
+      .map(([name, value], idx) => ({
+        name,
+        value,
+        percentage: Number(((value / currentHoldingsValue) * 100).toFixed(1)),
+        color: colors[idx % colors.length]
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [holdings, currentHoldingsValue]);
+
+  const handleExportCSV = () => {
+    if (!transactions || transactions.length === 0) return;
+    const headers = [
+      "Transaction ID",
+      "Timestamp",
+      "Symbol",
+      "Company Name",
+      "Trade Type",
+      "Quantity",
+      "Price Per Share (INR)",
+      "Total Amount (INR)",
+      "Realized PnL (INR)"
+    ];
+    const rows = transactions.map((t) => [
+      t.id,
+      `"${t.timestamp || ""}"`,
+      `"${t.symbol || ""}"`,
+      `"${(t.company_name || "").replace(/"/g, '""')}"`,
+      t.trade_type,
+      t.quantity,
+      t.price_per_share,
+      t.total_amount,
+      t.realized_pnl ?? 0
+    ]);
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "stocksikh_transactions.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-atmospheric text-[#F8FAFC]">
       <Navbar />
@@ -208,7 +298,17 @@ export default function VirtualPortfolio() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+            <button
+              onClick={handleExportCSV}
+              disabled={!transactions || transactions.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#111827] border border-white/[0.1] hover:bg-white/[0.06] disabled:opacity-50 text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
+              title="Export your transaction history as CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-[#38BDF8]" />
+              Export Transactions
+            </button>
+
             <button
               onClick={loadPortfolioData}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#111827] border border-white/[0.1] hover:bg-white/[0.06] text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
@@ -411,6 +511,76 @@ export default function VirtualPortfolio() {
                 )}
               </div>
             </>
+          )}
+        </section>
+
+        {/* Portfolio Sector Allocation Breakdown */}
+        <section className="bg-[#0F172A]/70 border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 backdrop-blur-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/[0.06] pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#00D09C]/10 border border-[#00D09C]/30 text-[#00D09C] flex items-center justify-center">
+                <PieChart className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-heading font-black text-xl text-white">
+                  Portfolio Sector Allocation
+                </h2>
+                <p className="text-xs text-[#94A3B8]">
+                  Real concentration breakdown across Indian market sectors (excluding cash reserves).
+                </p>
+              </div>
+            </div>
+            {sectorAllocation.length > 0 && (
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-white/[0.06] text-[#94A3B8] self-start sm:self-auto">
+                {sectorAllocation.length} Active {sectorAllocation.length === 1 ? "Sector" : "Sectors"}
+              </span>
+            )}
+          </div>
+
+          {sectorAllocation.length === 0 ? (
+            <div className="py-8 text-center text-xs text-[#94A3B8] italic border border-dashed border-white/[0.08] rounded-2xl">
+              Sector allocation unavailable for current holdings. Execute a paper trade to view concentration weights.
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* Stacked Progress Bar */}
+              <div className="h-4 w-full rounded-full bg-[#111827] overflow-hidden flex shadow-inner border border-white/[0.08]">
+                {sectorAllocation.map((s) => (
+                  <div
+                    key={s.name}
+                    style={{ width: `${s.percentage}%`, backgroundColor: s.color }}
+                    className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
+                    title={`${s.name}: ${s.percentage}% (₹${s.value.toLocaleString("en-IN")})`}
+                  />
+                ))}
+              </div>
+
+              {/* Sector Grid Tiles */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5 pt-2">
+                {sectorAllocation.map((s) => (
+                  <div
+                    key={s.name}
+                    className="p-3.5 rounded-2xl bg-[#111827]/80 border border-white/[0.06] hover:border-white/[0.15] transition-all space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span className="text-xs font-bold text-white truncate max-w-[120px]" title={s.name}>
+                          {s.name}
+                        </span>
+                      </div>
+                      <span className="text-xs font-black text-[#00D09C]">{s.percentage}%</span>
+                    </div>
+                    <div className="text-[11px] font-semibold text-[#94A3B8] pl-4.5">
+                      ₹{s.value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </section>
 

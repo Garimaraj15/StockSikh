@@ -1,11 +1,10 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import StockDetail from "./pages/StockDetail";
 import VirtualPortfolio from "./pages/VirtualPortfolio";
-import ProHelpers from "./pages/ProHelpers";
 import GlobalCreators from "./pages/GlobalCreators";
 import GamificationHub from "./pages/GamificationHub";
 import CommunityLeagues from "./pages/CommunityLeagues";
@@ -61,11 +60,7 @@ function App() {
 
         <Route
           path="/pro-helpers"
-          element={
-            <ProtectedRoute>
-              <ProHelpers />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/community#pros" replace />}
         />
 
         <Route

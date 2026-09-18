@@ -367,16 +367,16 @@ export default function MultiAssetMatrix() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
         {/* Educational Disclaimer Banner */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-[#D97706]" />
-            <span className="font-semibold">
-              <strong>Educational Simulator:</strong> All calculations, allocations, and inflation models are for financial literacy. Not personalized investment advice.
+        <div className="p-4 rounded-2xl bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[#FCD34D] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-[#F59E0B] mt-0.5 sm:mt-0" />
+            <span className="font-medium text-slate-300">
+              <strong className="text-[#FCD34D]">Educational Disclaimer:</strong> Educational assumptions based on historical asset-class benchmarks. These are not live expected returns or guaranteed future performance.
             </span>
           </div>
           <button
             onClick={handleResetDefaults}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F172A]/70 border border-[#FDE68A] text-[11px] font-bold text-[#92400E] hover:bg-[#FEF3C7] transition-all shrink-0 cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B0F17] border border-[#F59E0B]/40 text-[11px] font-bold text-[#FCD34D] hover:bg-[#F59E0B]/20 transition-all shrink-0 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" /> Reset Defaults
           </button>

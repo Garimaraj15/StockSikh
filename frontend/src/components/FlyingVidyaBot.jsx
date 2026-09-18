@@ -131,6 +131,48 @@ export default function FlyingVidyaBot({ context } = {}) {
     ]);
   };
 
+  const getDynamicFollowUps = () => {
+    const page = context?.page || (location.pathname.startsWith("/stock/") ? "stock_detail" : location.pathname.replace("/", "") || "dashboard");
+    const symbol = context?.symbol || (location.pathname.startsWith("/stock/") ? decodeURIComponent(location.pathname.replace("/stock/", "")).replace(".NS", "") : "");
+
+    if (page === "stock_detail" || location.pathname.startsWith("/stock/")) {
+      return [
+        `Why is RSI important for ${symbol || "this stock"}?`,
+        `Should I hold or exit ${symbol || "this stock"}?`
+      ];
+    }
+    if (page === "portfolio" || location.pathname === "/portfolio") {
+      return [
+        "Mera portfolio down kyun hai?",
+        "Dono mein se kaunsa stock sell karein?"
+      ];
+    }
+    if (page === "community" || location.pathname === "/community") {
+      return [
+        "How to choose a verified Pro Helper?",
+        "Best strategy for swing trading questions"
+      ];
+    }
+    if (page === "asset_matrix" || location.pathname === "/asset-matrix") {
+      return [
+        "Explain my asset allocation split",
+        "How much emergency reserve do I need?"
+      ];
+    }
+    if (page === "quests" || location.pathname === "/quests") {
+      return [
+        "How can I earn more XP today?",
+        "Explain the risk-reward ratio"
+      ];
+    }
+    return [
+      "Market kaisa hai aaj?",
+      "Which Indian stocks are showing strong signals?"
+    ];
+  };
+
+  const dynamicFollowUps = getDynamicFollowUps();
+
   return (
     <>
       {/* Active Flying / Floating Animated Character Mascot */}
@@ -280,25 +322,22 @@ export default function FlyingVidyaBot({ context } = {}) {
             )}
           </div>
 
-          {/* Quick Starter Chips */}
+          {/* Dynamic Follow-up Suggestions Bar */}
           <div className="p-2 px-3 bg-[#0B0F17] border-t border-white/[0.06] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {dynamicFollowUps.map((chip, idx) => (
+              <button
+                key={idx}
+                onClick={() => send(chip)}
+                className="text-[11px] font-semibold whitespace-nowrap px-3 py-1.5 rounded-full bg-[#00D09C]/10 hover:bg-[#00D09C]/20 text-[#00D09C] border border-[#00D09C]/25 transition-all cursor-pointer shadow-xs"
+              >
+                ✨ {chip}
+              </button>
+            ))}
             <button
               onClick={() => send("What is RSI and how is it calculated?")}
               className="text-[11px] font-semibold whitespace-nowrap px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-[#00D09C]/15 text-[#94A3B8] hover:text-[#00D09C] border border-white/[0.08] hover:border-[#00D09C]/30 transition-all cursor-pointer"
             >
-              📊 Explain RSI
-            </button>
-            <button
-              onClick={() => send("How does the Signal AI composite score work?")}
-              className="text-[11px] font-semibold whitespace-nowrap px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-[#00D09C]/15 text-[#94A3B8] hover:text-[#00D09C] border border-white/[0.08] hover:border-[#00D09C]/30 transition-all cursor-pointer"
-            >
-              🧠 AI Composite Score
-            </button>
-            <button
-              onClick={() => send("How do I manage risk in paper trading?")}
-              className="text-[11px] font-semibold whitespace-nowrap px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-[#00D09C]/15 text-[#94A3B8] hover:text-[#00D09C] border border-white/[0.08] hover:border-[#00D09C]/30 transition-all cursor-pointer"
-            >
-              🛡️ Risk Management
+              📊 RSI Basics
             </button>
           </div>
 
