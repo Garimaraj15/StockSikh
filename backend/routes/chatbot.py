@@ -4,7 +4,6 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import APIRouter
 import google.generativeai as genai
-import pandas as pd
 from pydantic import BaseModel
 import yfinance as yf
 
@@ -64,23 +63,39 @@ KNOWN_STOCKS = {
     "ZOMATO": "ZOMATO.NS"
 }
 
+def is_english_query(q: str) -> bool:
+    """Detect if the query is in English or Hindi/Hinglish."""
+    q_lower = q.lower()
+    hindi_markers = [
+        "kya", "kyu", "kyun", "kaise", "hai", "hain", "mera", "meri", "mere", "aaj",
+        "nikal", "sakte", "bata", "batao", "btao", "btaoo", "iska", "mtlb", "matlab",
+        "kitna", "kitni", "kaun", "kaunsa", "kaisa", "paise", "paisa",
+        "rakhe", "karein", "kare", "karu", "kre", "ho", "raha", "rahi", "bech", "beche",
+        "bechu", "becho", "bechna", "dono", "isme", "se", "bhut", "bahut", "jyada",
+        "zyada", "isiliye", "puch", "tmko", "tumko", "lagta", "gira", "kam"
+    ]
+    for w in hindi_markers:
+        if re.search(r'\b' + re.escape(w) + r'\b', q_lower):
+            return False
+    return True
+
 def generate_natural_mentor_reply(query: str, stock_data: Optional[dict] = None, page_context: Optional[dict] = None) -> str:
     """Natural, friendly conversational mentor reply matching user language and answering directly."""
     q_lower = query.lower()
+    is_eng = is_english_query(query)
 
-    # Detect language style
-    is_english = not any(w in q_lower for w in ["kya", "kyu", "kyun", "kaise", "hai", "mera", "meri", "mere", "aaj", "nikal", "sakte", "bata", "batao", "iska", "mtlb", "matlab", "kitna", "kitni", "kaun", "kaisa", "paise", "paisa", "rakhe", "karein", "ho", "raha", "rahi"])
-
-    # Portfolio page: number-identification + keyword answers
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 1. PORTFOLIO CONTEXT EVALUATION
+    # ─────────────────────────────────────────────────────────────────────────────
     if page_context and isinstance(page_context, dict) and page_context.get("page") == "portfolio":
-        p_val  = float(page_context.get("portfolio_value", 0) or 0)
-        p_cash = float(page_context.get("cash_available", 0) or 0)
+        p_val   = float(page_context.get("portfolio_value", 0) or 0)
+        p_cash  = float(page_context.get("cash_available", 0) or 0)
         inv_val = float(page_context.get("invested_value", 0) or 0)
-        h_val  = float(page_context.get("holdings_value", 0) or 0)
+        h_val   = float(page_context.get("holdings_value", 0) or 0)
         p_today = float(page_context.get("today_pnl", 0) or 0)
-        p_pnl  = float(page_context.get("total_pnl", 0) or 0)
-        u_pnl  = float(page_context.get("unrealized_pnl", 0) or 0)
-        r_pnl  = float(page_context.get("realized_pnl", 0) or 0)
+        p_pnl   = float(page_context.get("total_pnl", 0) or 0)
+        u_pnl   = float(page_context.get("unrealized_pnl", 0) or 0)
+        r_pnl   = float(page_context.get("realized_pnl", 0) or 0)
         holdings = page_context.get("holdings", [])
 
         # --- Number identification: match user-mentioned numeric values to portfolio fields ---
@@ -108,7 +123,7 @@ def generate_natural_mentor_reply(query: str, stock_data: Optional[dict] = None,
                 ]
                 for field_val, field_name, field_desc in field_map:
                     if field_val != 0 and abs(num - field_val) < 1.0:
-                        if is_english:
+                        if is_eng:
                             msg = f"₹{num:,.2f} is your **{field_name}** — it is {field_desc}."
                             if field_name == "Total Portfolio Value":
                                 msg += f" Note: this is NOT entirely withdrawable. Cash Available is ₹{p_cash:,.2f} and Holdings are ₹{h_val:,.2f}. StockSikh uses virtual paper money."
@@ -120,41 +135,177 @@ def generate_natural_mentor_reply(query: str, stock_data: Optional[dict] = None,
             except ValueError:
                 pass
 
-        if any(w in q_lower for w in ["nikal", "withdraw", "available", "cash", "nikal sakte", "paisa hai"]):
-            if is_english:
+        # --- Withdrawal query ---
+        if any(w in q_lower for w in ["nikal", "withdraw", "nikal sakte", "nikal sakte right", "paisa nikal"]):
+            if is_eng:
                 return f"No, ₹{p_val:,.2f} is not entirely withdrawable cash. ₹{p_val:,.2f} is your Total Portfolio Value (Holdings: ₹{h_val:,.2f} + Cash: ₹{p_cash:,.2f}). Your currently available virtual Cash Balance is ₹{p_cash:,.2f}. To convert holdings into cash, you need to sell your stocks. Also, note that StockSikh is a paper-trading learning platform with virtual money, not real bank currency."
             return f"Nahi, ₹{p_val:,.2f} poora withdrawable cash nahi hai. ₹{p_val:,.2f} aapke total portfolio ki current value hai (Holdings: ₹{h_val:,.2f} + Cash: ₹{p_cash:,.2f}). Abhi aapka available Cash Balance ₹{p_cash:,.2f} hai. Holdings ko cash banane ke liye shares sell karne honge. Saath hi yaad rakhein ki StockSikh ek virtual paper trading platform hai, isme real money withdrawal nahi hota."
 
-        if any(w in q_lower for w in ["down", "loss", "gira", "kam", "aaj"]):
-            if holdings:
-                worst_today = min(holdings, key=lambda x: x.get("day_pnl", 0) or 0)
-                worst_sym = worst_today.get('company_name') or worst_today.get('symbol')
-                worst_loss = worst_today.get('day_pnl', 0)
-                if is_english:
-                    return f"Your portfolio is down by ₹{abs(p_today):,.2f} today. The main drag on your performance today is {worst_sym} with a daily change of ₹{worst_loss:,.2f} ({worst_today.get('day_pnl_percent', 0)}%)."
-                return f"Aapka portfolio aaj ₹{abs(p_today):,.2f} down hai. Iska main reason {worst_sym} ka stock hai, jo aaj ₹{worst_loss:,.2f} ({worst_today.get('day_pnl_percent', 0)}%) down chal raha hai."
+        # --- Sell & Comparison Intents ---
+        sell_terms = ["sell", "bech", "beche", "bechna", "bechu", "becho", "exit", "reduce", "nikalu", "nikalein", "hatao", "hataun", "close"]
+        compare_terms = ["kaunsa", "kaun sa", "which one", "dono mein", "dono me", "dono", "which", "kis stock", "kis position", "weaker", "kise", "compare"]
+
+        has_sell_intent = any(w in q_lower for w in sell_terms)
+        has_compare_intent = any(w in q_lower for w in compare_terms)
+
+        # A) Single stock sell inquiry (e.g. "RELIANCE sell karu?", "TCS bech de kya?")
+        matching_holdings = []
+        for h in holdings:
+            sym_raw = h.get("symbol", "").upper().replace(".NS", "")
+            comp_name = (h.get("company_name") or "").upper()
+            if sym_raw in query.upper() or (len(sym_raw) > 2 and sym_raw.lower() in q_lower) or (comp_name and any(p in query.upper() for p in comp_name.split() if len(p) > 3)):
+                matching_holdings.append(h)
+
+        if has_sell_intent and len(matching_holdings) == 1 and not has_compare_intent:
+            sh = matching_holdings[0]
+            sh_name = sh.get("company_name") or sh.get("symbol", "").replace(".NS", "")
+            sh_sym = sh.get("symbol", "").replace(".NS", "")
+            sh_price = float(sh.get("current_price", 0) or 0)
+            sh_buy = float(sh.get("avg_buy_price", 0) or 0)
+            sh_pnl = float(sh.get("pnl", 0) or 0)
+            sh_pnl_pct = float(sh.get("pnl_percent", 0) or 0)
+            sh_day_pct = float(sh.get("day_pnl_percent", 0) or 0)
+
+            if is_eng:
+                return (
+                    f"In your portfolio, **{sh_name} ({sh_sym})** is currently trading at ₹{sh_price:,.2f} "
+                    f"(Avg Buy: ₹{sh_buy:,.2f}, Total P&L: ₹{sh_pnl:,.2f} / {sh_pnl_pct:+.2f}%, Today's Change: {sh_day_pct:+.2f}%).\n\n"
+                    f"• **Analysis**: Your position is currently {'in profit' if sh_pnl >= 0 else 'in a loss'} of {abs(sh_pnl_pct):.2f}%.\n"
+                    f"• **Decision Context**: If you are following a strict risk-reward strategy or stop-loss, consider whether this drawdown matches your pre-defined exit rules. (Note: This is data-driven analysis, not direct financial advice)."
+                )
             else:
-                if is_english:
+                return (
+                    f"Aapke portfolio mein **{sh_name} ({sh_sym})** abhi ₹{sh_price:,.2f} par chal raha hai "
+                    f"(Avg Buy: ₹{sh_buy:,.2f}, Total P&L: ₹{sh_pnl:,.2f} / {sh_pnl_pct:+.2f}%, Aaj ka Change: {sh_day_pct:+.2f}%).\n\n"
+                    f"• **Position Status**: Yeh stock abhi {'profit mein' if sh_pnl >= 0 else f'{abs(sh_pnl_pct):.2f}% loss mein'} chal raha hai.\n"
+                    f"• **Decision Context**: Agar aapka stop-loss hit hua hai ya capital ko kisi stronger opportunity mein move karna chahte hain, toh is position ko reduce/exit karna review kar sakte hain. (Yeh automated data summary hai, direct advisory nahi)."
+                )
+
+        # B) Comparison / Which one to sell / General sell intent with multiple holdings
+        if (has_sell_intent or has_compare_intent) and holdings:
+            candidate_holdings = matching_holdings if len(matching_holdings) >= 2 else holdings
+
+            if len(candidate_holdings) >= 2:
+                # Sort candidate holdings to find the weakest (lowest P&L % and lowest day P&L %)
+                sorted_by_weakness = sorted(
+                    candidate_holdings,
+                    key=lambda x: (float(x.get("pnl_percent", 0) or 0), float(x.get("day_pnl_percent", 0) or 0))
+                )
+                weaker = sorted_by_weakness[0]
+                stronger = sorted_by_weakness[-1]
+
+                w_name = weaker.get("company_name") or weaker.get("symbol", "").replace(".NS", "")
+                w_sym = weaker.get("symbol", "").replace(".NS", "")
+                w_price = float(weaker.get("current_price", 0) or 0)
+                w_buy = float(weaker.get("avg_buy_price", 0) or 0)
+                w_pnl = float(weaker.get("pnl", 0) or 0)
+                w_pnl_pct = float(weaker.get("pnl_percent", 0) or 0)
+                w_day_pct = float(weaker.get("day_pnl_percent", 0) or 0)
+
+                s_name = stronger.get("company_name") or stronger.get("symbol", "").replace(".NS", "")
+                s_sym = stronger.get("symbol", "").replace(".NS", "")
+                s_price = float(stronger.get("current_price", 0) or 0)
+                s_buy = float(stronger.get("avg_buy_price", 0) or 0)
+                s_pnl = float(stronger.get("pnl", 0) or 0)
+                s_pnl_pct = float(stronger.get("pnl_percent", 0) or 0)
+                s_day_pct = float(stronger.get("day_pnl_percent", 0) or 0)
+
+                if is_eng:
+                    first_line = f"Based on currently available portfolio data, **{w_name} ({w_sym})** is showing more relative weakness compared to **{s_name} ({s_sym})**."
+                    comparison_block = (
+                        f"**Comparative Data Summary:**\n"
+                        f"• **{w_name} ({w_sym})**:\n"
+                        f"  - Current Price: ₹{w_price:,.2f} (Avg Buy: ₹{w_buy:,.2f})\n"
+                        f"  - Total P&L: ₹{w_pnl:,.2f} ({w_pnl_pct:+.2f}%)\n"
+                        f"  - Today's Change: {w_day_pct:+.2f}%\n\n"
+                        f"• **{s_name} ({s_sym})**:\n"
+                        f"  - Current Price: ₹{s_price:,.2f} (Avg Buy: ₹{s_buy:,.2f})\n"
+                        f"  - Total P&L: ₹{s_pnl:,.2f} ({s_pnl_pct:+.2f}%)\n"
+                        f"  - Today's Change: {s_day_pct:+.2f}%"
+                    )
+                    reasoning = (
+                        f"**Why {w_sym} looks weaker:**\n"
+                        f"{w_name} has a deeper drawdown ({w_pnl_pct:+.2f}%) than {s_name} ({s_pnl_pct:+.2f}%).\n"
+                        f"*(Note: Technical indicators such as RSI and AI Score are not in the portfolio overview, so this comparison is based on portfolio P&L and price drawdown).* "
+                        f"If your risk management strategy prioritizes reducing the most underperforming position, **{w_name}** is the one to review first."
+                    )
+                    return f"{first_line}\n\n{comparison_block}\n\n{reasoning}"
+                else:
+                    first_line = f"Current available portfolio data ke basis par **{w_name} ({w_sym})** mein weakness **{s_name} ({s_sym})** ke comparison mein zyada dikh rahi hai."
+                    comparison_block = (
+                        f"**Dono Positions Ka Data Comparison:**\n"
+                        f"• **{w_name} ({w_sym})**:\n"
+                        f"  - Current Price: ₹{w_price:,.2f} (Avg Buy: ₹{w_buy:,.2f})\n"
+                        f"  - Total P&L: ₹{w_pnl:,.2f} ({w_pnl_pct:+.2f}%)\n"
+                        f"  - Aaj ka Change: {w_day_pct:+.2f}%\n\n"
+                        f"• **{s_name} ({s_sym})**:\n"
+                        f"  - Current Price: ₹{s_price:,.2f} (Avg Buy: ₹{s_buy:,.2f})\n"
+                        f"  - Total P&L: ₹{s_pnl:,.2f} ({s_pnl_pct:+.2f}%)\n"
+                        f"  - Aaj ka Change: {s_day_pct:+.2f}%"
+                    )
+                    reasoning = (
+                        f"**Explanation:**\n"
+                        f"{w_name} ka loss percentage ({w_pnl_pct:+.2f}%) {s_name} ({s_pnl_pct:+.2f}%) ke mukable zyada deep hai aur portfolio par bada drag hai.\n"
+                        f"*(Note: Technical indicators jaise RSI/AI Score portfolio summary mein available nahi hain, isliye yeh comparison pure portfolio P&L drawdown par based hai).* "
+                        f"Agar aapki trading strategy weaker/underperforming position ko reduce karne ki hai, toh **{w_name}** ko pehle review karein."
+                    )
+                    return f"{first_line}\n\n{comparison_block}\n\n{reasoning}"
+
+            elif len(candidate_holdings) == 1:
+                sh = candidate_holdings[0]
+                sh_name = sh.get("company_name") or sh.get("symbol", "").replace(".NS", "")
+                sh_pnl_pct = float(sh.get("pnl_percent", 0) or 0)
+                sh_pnl = float(sh.get("pnl", 0) or 0)
+                if is_eng:
+                    return f"You have 1 active holding: **{sh_name}** (P&L: ₹{sh_pnl:,.2f} / {sh_pnl_pct:+.2f}%). If you want to reduce equity exposure or lock cash, this is your only active position to exit."
+                return f"Aapke portfolio mein 1 hi active holding hai: **{sh_name}** (P&L: ₹{sh_pnl:,.2f} / {sh_pnl_pct:+.2f}%). Agar aap equity risk kam karna chahte hain toh yahi active position available hai."
+
+        # --- Portfolio Loss / Negative Drag reasoning ---
+        if any(w in q_lower for w in ["negative", "loss", "down", "gira", "kam", "kyu", "kyun"]):
+            if holdings:
+                worst_holding = min(holdings, key=lambda x: float(x.get("pnl_percent", 0) or 0))
+                worst_sym = worst_holding.get("symbol", "").replace(".NS", "")
+                worst_name = worst_holding.get("company_name") or worst_sym
+                worst_loss = float(worst_holding.get("pnl", 0) or 0)
+                worst_pct = float(worst_holding.get("pnl_percent", 0) or 0)
+
+                if is_eng:
+                    return (
+                        f"Your portfolio is currently showing an overall loss of ₹{abs(p_pnl):,.2f} ({page_context.get('total_pnl_percent', 0)}%).\n\n"
+                        f"• **Main Loss Driver**: The biggest drag on your portfolio is **{worst_name} ({worst_sym})**, which is down ₹{abs(worst_loss):,.2f} ({worst_pct:.2f}% from your buy price).\n"
+                        f"• **Actionable Context**: In paper trading, evaluate whether these stocks are in temporary pullbacks or if their broader trend has broken down before taking action."
+                    )
+                else:
+                    return (
+                        f"Aapka portfolio abhi total ₹{abs(p_pnl):,.2f} ({page_context.get('total_pnl_percent', 0)}%) loss mein chal raha hai.\n\n"
+                        f"• **Main Reason / Drag**: Aapke portfolio mein sabse bada negative drag **{worst_name} ({worst_sym})** hai, jo aapke buy price se ₹{abs(worst_loss):,.2f} ({worst_pct:.2f}%) neeche trade kar raha hai.\n"
+                        f"• **Next Step**: Paper trading mein check karein ki kya yeh temporary market correction hai ya trend weak ho gaya hai, taaki aap disciplined decision le sakein."
+                    )
+            else:
+                if is_eng:
                     return f"You currently have no active stock holdings. Your Cash Available is ₹{p_cash:,.2f}."
                 return f"Aapke portfolio mein abhi koi active stock holdings nahi hain. Cash Balance ₹{p_cash:,.2f} ready hai."
 
-        if any(w in q_lower for w in ["holding", "holdings", "stock", "stocks", "kaun"]):
+        # --- Explicit holdings list requested ONLY when user asks "show holdings" / "mere stocks kaunse hai" ---
+        if any(w in q_lower for w in ["show holdings", "list holdings", "kaun kaun se", "mere stocks", "my stocks"]) and not has_sell_intent:
             if not holdings:
-                return "You have no active holdings." if is_english else "Aapke paas abhi koi active stock holdings nahi hain."
-            h_lines = [f"• {h.get('company_name') or h.get('symbol')}: {h.get('quantity')} shares @ ₹{h.get('current_price', 0):,.2f} (P&L: ₹{h.get('pnl', 0):,.2f})" for h in holdings]
-            prefix = f"Your active holdings ({len(holdings)} stocks):" if is_english else f"Aapki active holdings ({len(holdings)} stocks):"
+                return "You have no active holdings." if is_eng else "Aapke paas abhi koi active stock holdings nahi hain."
+            h_lines = [f"• {h.get('company_name') or h.get('symbol')}: {h.get('quantity')} shares @ ₹{float(h.get('current_price', 0) or 0):,.2f} (P&L: ₹{float(h.get('pnl', 0) or 0):,.2f})" for h in holdings]
+            prefix = f"Your active holdings ({len(holdings)} stocks):" if is_eng else f"Aapki active holdings ({len(holdings)} stocks):"
             return prefix + "\n" + "\n".join(h_lines)
 
-    # General concept answers directly without data dumping
+    # ─────────────────────────────────────────────────────────────────────────────
+    # 2. GENERAL CONCEPT / STOCK DATA REPLIES
+    # ─────────────────────────────────────────────────────────────────────────────
     if "rsi" in q_lower:
         if stock_data:
             rsi_val = stock_data.get("rsi", 50)
             sym = stock_data.get("name") or stock_data.get("symbol", "").replace(".NS", "")
-            if is_english:
+            if is_eng:
                 return f"The 14-day RSI for {sym} is currently {rsi_val}. RSI measures price momentum from 0 to 100: values above 70 indicate overbought conditions (potential pullback), while below 30 indicate oversold conditions (potential rebound). At {rsi_val}, momentum is {'overbought' if rsi_val > 70 else 'oversold' if rsi_val < 30 else 'in a neutral healthy range'}."
             return f"{sym} ka 14-day RSI abhi {rsi_val} hai. RSI stock ke momentum ko 0 se 100 ke beech naapta hai. 70 se upar overbought (cooling off expected) aur 30 se neeche oversold (bounce back possible) mana jaata hai. Abhi RSI {rsi_val} neutral range mein hai."
         else:
-            if is_english:
+            if is_eng:
                 return "RSI (Relative Strength Index) is a momentum indicator that measures the speed and change of price movements on a scale from 0 to 100. Above 70 means overbought (potential pullback), and below 30 means oversold (potential bounce)."
             return "RSI (Relative Strength Index) ek momentum indicator hai jo stock price ki speed aur change ko 0 se 100 ke scale par dikhata hai. 70 se upar overbought (bhaav gir sakta hai) aur 30 se neeche oversold (bhaav sambhal sakta hai) hota hai."
 
@@ -164,21 +315,21 @@ def generate_natural_mentor_reply(query: str, stock_data: Optional[dict] = None,
             price = stock_data.get("price", 0)
             sym = stock_data.get("name") or stock_data.get("symbol", "").replace(".NS", "")
             above = price >= ma20
-            if is_english:
+            if is_eng:
                 return f"{sym} is currently trading at ₹{price:,.2f}, which is {'above' if above else 'below'} its 20-day Moving Average of ₹{ma20:,.2f}."
             return f"{sym} ka live price ₹{price:,.2f} hai, jo uske 20-Day MA (₹{ma20:,.2f}) se {'upar' if above else 'neeche'} trade kar raha hai."
 
-    # Stock overview if specifically asked
+    # Stock overview if specifically asked on Stock Detail page
     if stock_data:
         sym = stock_data.get("name") or stock_data.get("symbol", "").replace(".NS", "")
         price = stock_data.get("price") or 0.0
         signal = stock_data.get("signal") or "HOLD"
         rsi = stock_data.get("rsi") or 50.0
-        if is_english:
+        if is_eng:
             return f"{sym} is trading at ₹{price:,.2f} with a technical signal of {signal} and an RSI of {rsi}."
         return f"{sym} abhi ₹{price:,.2f} par trade kar raha hai, technical signal {signal} hai aur RSI {rsi} hai."
 
-    if is_english:
+    if is_eng:
         return f"Regarding your question '{query}': StockSikh is an interactive stock market learning platform. Feel free to ask about stock indicators, technical analysis, or paper trading strategies!"
     return f"Aapke sawal '{query}' ke baare mein: StockSikh par aap live technical indicators, portfolio strategies aur market trends ke baare mein kuch bhi pooch sakte hain!"
 
@@ -387,36 +538,40 @@ CURRENT PAGE VALUES (strip commas from user-mentioned numbers and compare here):
 CRITICAL INSTRUCTIONS:
 1. LANGUAGE MATCHING:
 - Reply in the EXACT same language and writing style used by the user.
-  - If user writes in Hinglish (e.g. "iska mtlb mere pass avi..."), reply in natural, friendly Hinglish.
+  - If user writes in Hinglish (e.g. "tmko kya lagta stock bech de kya", "to dono mein se kaunsa beche", "kaunsa sell kre"), reply in natural, friendly Hinglish.
   - If user writes in Hindi (Devanagari), reply in Hindi.
   - If user writes in English, reply in clean English.
   - If user writes in Bengali/Tamil/other languages, reply in that language.
-- NEVER translate the user's question or reply in English when the user wrote in Hindi/Hinglish/etc.
+- NEVER switch to formal English when the user is speaking Hinglish or Hindi.
 
 2. DIRECT ANSWER FIRST (NO UNNECESSARY DUMPING):
 - ALWAYS directly answer the user's SPECIFIC question in the very first sentence.
-- NEVER dump the entire portfolio status or page context unprompted. Use the background context silently to answer.
-- Only quote specific numbers (e.g. cash balance, holdings value) that directly answer the question.
+- NEVER dump the raw portfolio list unprompted instead of answering.
 
-3. PORTFOLIO & WITHDRAWAL SAFETY:
-- Understand clearly: "Total Portfolio Value" = "Cash Available" + "Holdings Value".
-- Total Portfolio Value is NOT directly withdrawable cash. Only "Cash Available" (virtual trading balance) is uninvested cash. Holdings must be sold to become cash.
-- StockSikh is a paper-trading educational simulator with virtual cash; it is NOT real bank money and cannot be withdrawn to a bank account.
+3. SELL / EXIT & COMPARISON INTENTS (HIGHEST IMPORTANCE):
+- If user asks which stock to sell / exit / reduce (e.g. "kaunsa sell kre?", "dono mein se kaunsa beche?", "which one should I sell?", "kis stock se exit karu?", "tmko kya lagta stock bech de kya"):
+  a. The VERY FIRST sentence MUST directly state which stock is showing more relative weakness based on available data (e.g. deeper P&L % loss or daily drag).
+     Example (Hinglish): "Current available data ke basis par TCS mein weakness RELIANCE ke comparison mein zyada dikh rahi hai."
+     Example (English): "Based on the currently available portfolio data, TCS is showing more relative weakness compared to RELIANCE."
+  b. Show a concise side-by-side comparison for the relevant holdings using available data (Current Price, Avg Buy Price, Total P&L, P&L %, Daily Change %).
+  c. Explain WHY that stock looks weaker (e.g. deeper drawdown, larger loss percentage).
+  d. Responsible Framing: Do NOT give rigid orders like "Sell TCS immediately". Use evidence-based phrasing: "If your risk strategy requires cutting the weaker position, TCS is the one to review first."
+  e. If technical indicators (RSI/AI score) are not in the portfolio context, explicitly state: "Technical indicators portfolio overview mein available nahi hain, isliye yeh comparison pure portfolio P&L drawdown par based hai." DO NOT invent fake RSI numbers.
+- If user asks about a SINGLE stock to sell (e.g. "RELIANCE sell karu?"):
+  Focus strictly on that stock's available metrics and performance without discussing unrelated stocks.
 
-4. PEDAGOGY:
-- Keep formatting concise, clear, and encouraging. Avoid robotic boilerplate.
-- Currency: Always use Indian Rupees (₹ or Rs.).
+4. NUMBER / VALUE IDENTIFICATION:
+- If user mentions a number (e.g. "10,902", "10902", "7553.70"):
+  Match it against CURRENT PAGE VALUES and state exactly what that label represents.
 
-5. NUMBER / VALUE IDENTIFICATION (HIGHEST PRIORITY):
-- If the user mentions any number or amount (e.g. "10,902", "10902", "7553.70", "-98"):
-  a. Strip commas/spaces to get the plain numeric value.
-  b. Compare it (within Rs.1 tolerance) against EVERY entry in the CURRENT PAGE VALUES section below.
-  c. If a match is found, immediately state what that label represents and explain it simply.
-     EXAMPLE: user asks "10,902 kya hai?" and CURRENT PAGE VALUES has "Total Portfolio Value = 10902"
-     -> Reply: "₹10,902 aapka Total Portfolio Value hai — ye aapki total net worth hai (Cash + Holdings)."
-  d. If no match is found in CURRENT PAGE VALUES, say: "Ye number current page ke data mein match nahi karta."
-- NEVER give a generic financial definition when the number clearly exists in the context.
-- NEVER invent a meaning for a number not present in the context.
+5. PORTFOLIO & WITHDRAWAL SAFETY:
+- "Total Portfolio Value" = "Cash Available" + "Holdings Value".
+- Total Portfolio Value is NOT entirely withdrawable cash. Only Cash Available is uninvested cash.
+- StockSikh is a paper-trading educational simulator with virtual cash; it cannot be withdrawn to a bank account.
+
+6. PEDAGOGY:
+- Keep formatting concise, clear, and encouraging with bullet points.
+- Always use Indian Rupees (₹ or Rs.).
 {stock_context}
 
 User Question: "{message}"

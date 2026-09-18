@@ -218,18 +218,21 @@ export default function FlyingVidyaBot({ context } = {}) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={clearChat}
-                className="p-2 rounded-xl text-[#94A3B8] hover:text-[#00D09C] hover:bg-white/[0.06] transition-colors cursor-pointer"
-                title="Clear Chat"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-[#94A3B8] hover:text-[#00D09C] hover:bg-white/[0.06] border border-white/[0.08] transition-colors cursor-pointer"
+                title="Clear conversation history and start fresh"
+                aria-label="Clear Chat"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Clear</span>
               </button>
               <button
                 onClick={() => setOpen(false)}
-                className="p-2 rounded-xl text-[#94A3B8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-[#94A3B8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
                 title="Close"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
