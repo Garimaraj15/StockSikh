@@ -23,7 +23,10 @@ from routes.gamification import LEVELS
 from routes.portfolio import fetch_live_stock_quote
 
 # Ensure community tables exist
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception:
+    pass
 
 router = APIRouter(
     prefix="/community",
