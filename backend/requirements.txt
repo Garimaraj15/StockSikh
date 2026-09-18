@@ -10,3 +10,4 @@ google-generativeai
 python-multipart
 email-validator
 yfinance
+pytz

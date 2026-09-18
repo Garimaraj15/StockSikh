@@ -9,8 +9,6 @@ import {
   Wallet,
   TrendingUp,
   Sparkles,
-  Gift,
-  CheckCircle2,
   Clock,
   RefreshCw,
   Plus,
@@ -19,21 +17,69 @@ import {
   Activity,
   Layers
 } from "lucide-react";
+import {
+  CartesianGrid,
+  Area,
+  AreaChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+
+function getChartDomain(points, keys) {
+  const values = points.flatMap((point) => keys
+    .map((key) => Number(point[key]))
+    .filter((value) => Number.isFinite(value)));
+  if (!values.length) return ["auto", "auto"];
+
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const spread = maximum - minimum;
+  const padding = spread > 0 ? spread * 0.18 : Math.max(Math.abs(maximum) * 0.01, 1);
+  return [Math.max(0, minimum - padding), maximum + padding];
+}
+
+function PortfolioHistoryTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0].payload;
+  return (
+    <div className="bg-[#0F172A]/95 border border-white/[0.12] rounded-xl shadow-2xl p-3 text-xs text-white min-w-44 backdrop-blur-xl">
+      <div className="font-bold text-[#94A3B8]">{new Date(label).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+      <div className="font-extrabold text-[#00D09C] mt-1">Portfolio Value: ₹{Number(point.portfolio_value).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+      <div className="text-[#CBD5E1]">Daily Change: {point.daily_change >= 0 ? "+" : ""}₹{Number(point.daily_change ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+      <div className="text-[#CBD5E1]">Daily Change: {point.daily_change_percent >= 0 ? "+" : ""}{Number(point.daily_change_percent ?? 0).toFixed(2)}%</div>
+    </div>
+  );
+}
+
+function StockHistoryTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+
+  const point = payload[0].payload;
+  return (
+    <div className="bg-[#0F172A]/95 border border-white/[0.12] rounded-xl shadow-2xl p-3 text-xs text-white backdrop-blur-xl">
+      <div className="font-bold text-[#94A3B8]">{new Date(label).toLocaleDateString("en-IN")}</div>
+      <div className="text-[#38BDF8] font-semibold">Position Value: ₹{Number(point.position_value).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+      <div className={point.daily_change >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}>Daily Change: {point.daily_change >= 0 ? "+" : ""}₹{Number(point.daily_change).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+      <div className={point.overall_pnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}>Overall P&amp;L: {point.overall_pnl >= 0 ? "+" : ""}₹{Number(point.overall_pnl).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+    </div>
+  );
+}
 
 export default function VirtualPortfolio() {
-  const { user } = useAuth();
-  const userId = user?.id || 1;
+  const { authConfig } = useAuth();
 
   const [summary, setSummary] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [wallet, setWallet] = useState(null);
+  const [portfolioHistory, setPortfolioHistory] = useState([]);
+  const [selectedSymbol, setSelectedSymbol] = useState("");
+  const [stockHistory, setStockHistory] = useState([]);
+  const [stockHistoryLoading, setStockHistoryLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // Task claim modal state
-  const [activeTask, setActiveTask] = useState(null);
-  const [taskInput, setTaskInput] = useState("");
-  const [claimLoading, setClaimLoading] = useState(false);
 
   // Buy/Sell modal state
   const [tradeModalStock, setTradeModalStock] = useState(null);
@@ -43,99 +89,121 @@ export default function VirtualPortfolio() {
     setLoading(true);
     try {
       const [sumRes, holdRes, txnRes, walRes] = await Promise.all([
-        axios.get(`${API}/portfolio/summary?user_id=${userId}`),
-        axios.get(`${API}/portfolio/holdings?user_id=${userId}`),
-        axios.get(`${API}/portfolio/transactions?user_id=${userId}`),
-        axios.get(`${API}/wallet/balance?user_id=${userId}`)
+        axios.get(`${API}/portfolio/summary`, authConfig()),
+        axios.get(`${API}/portfolio/holdings`, authConfig()),
+        axios.get(`${API}/portfolio/transactions`, authConfig()),
+        axios.get(`${API}/wallet/balance`, authConfig())
       ]);
 
       setSummary(sumRes.data);
       setHoldings(holdRes.data?.holdings || []);
       setTransactions(txnRes.data?.transactions || []);
       setWallet(walRes.data);
+      window.dispatchEvent(new Event("stocksikh:wallet-updated"));
+
+      const historyRes = await axios.get(`${API}/portfolio/history`, authConfig());
+      setPortfolioHistory(historyRes.data?.history || []);
+      setSelectedSymbol((current) => current || holdRes.data?.holdings?.[0]?.symbol || "");
     } catch (err) {
       console.error("Error loading portfolio data:", err);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [authConfig]);
 
   useEffect(() => {
     loadPortfolioData();
   }, [loadPortfolioData]);
 
-  const claimReward = async (task) => {
-    if (task.id === "phone_bonus" || task.id === "dob_bonus") {
-      setActiveTask(task);
-      setTaskInput("");
+  useEffect(() => {
+    if (!selectedSymbol) {
+      setStockHistory([]);
       return;
     }
 
-    setClaimLoading(true);
-    try {
-      await axios.post(`${API}/wallet/claim-task`, {
-        user_id: userId,
-        task_id: task.id
-      });
-      await loadPortfolioData();
-    } catch (e) {
-      console.error("Claim error:", e);
-    } finally {
-      setClaimLoading(false);
-    }
-  };
+    const loadStockHistory = async () => {
+      setStockHistoryLoading(true);
+      try {
+        const res = await axios.get(`${API}/portfolio/history`, {
+          ...authConfig(),
+          params: { symbol: selectedSymbol }
+        });
+        setStockHistory(res.data?.history || []);
+      } catch (err) {
+        console.error("Error loading stock history:", err);
+        setStockHistory([]);
+      } finally {
+        setStockHistoryLoading(false);
+      }
+    };
 
-  const submitTaskModal = async (e) => {
-    e.preventDefault();
-    if (!taskInput.trim() || !activeTask) return;
-
-    setClaimLoading(true);
-    try {
-      const payload = {
-        user_id: userId,
-        task_id: activeTask.id
-      };
-      if (activeTask.id === "phone_bonus") payload.phone = taskInput;
-      if (activeTask.id === "dob_bonus") payload.dob = taskInput;
-
-      await axios.post(`${API}/wallet/claim-task`, payload);
-      setActiveTask(null);
-      await loadPortfolioData();
-    } catch (e) {
-      console.error("Task modal error:", e);
-    } finally {
-      setClaimLoading(false);
-    }
-  };
+    loadStockHistory();
+  }, [selectedSymbol, authConfig]);
 
   const totalInvested = summary?.total_invested ?? 0;
   const currentHoldingsValue = summary?.current_holdings_value ?? 0;
-  const totalPnl = summary?.unrealized_pnl ?? 0;
+  const totalPnl = summary?.total_pnl ?? 0;
+  const realizedPnl = summary?.realized_pnl ?? 0;
+  const unrealizedPnl = summary?.unrealized_pnl ?? 0;
   const totalPnlPercent = summary?.pnl_percent ?? 0;
   const dayPnl = summary?.day_pnl ?? 0;
   const dayPnlPercent = summary?.day_pnl_percent ?? 0;
+  const startingCapital = summary?.starting_capital ?? 0;
+  const cashAvailable = summary?.cash_balance ?? wallet?.virtual_cash ?? 0;
+  const selectedHolding = holdings.find((holding) => holding.symbol === selectedSymbol);
+  const portfolioDomain = getChartDomain(portfolioHistory, ["portfolio_value"]);
+  const stockDomain = getChartDomain(stockHistory, ["position_value", "invested_value"]);
+  const selectedCurrentValue = selectedHolding?.current_value ?? 0;
+  const selectedOverallPnl = selectedHolding?.unrealized_pnl ?? 0;
+  const selectedTodayPnl = selectedHolding?.day_pnl ?? 0;
 
   const isTotalZero = totalPnl === 0;
   const isTotalProfit = totalPnl > 0;
-  const isDayZero = dayPnl === 0;
   const isDayProfit = dayPnl > 0;
 
+  const portfolioContext = summary ? {
+    page: "portfolio",
+    portfolio_value: summary.net_worth ?? 0,
+    cash_available: cashAvailable,
+    invested_value: totalInvested,
+    holdings_value: currentHoldingsValue,
+    total_pnl: totalPnl,
+    total_pnl_percent: totalPnlPercent,
+    today_pnl: dayPnl,
+    today_pnl_percent: dayPnlPercent,
+    unrealized_pnl: unrealizedPnl,
+    realized_pnl: realizedPnl,
+    holdings: holdings.map((h) => ({
+      symbol: h.symbol,
+      company_name: h.company_name,
+      quantity: h.quantity,
+      avg_buy_price: h.avg_buy_price,
+      current_price: h.current_price,
+      current_value: h.current_value,
+      total_invested: h.total_invested,
+      pnl: h.unrealized_pnl,
+      pnl_percent: h.pnl_percent,
+      day_pnl: h.day_pnl,
+      day_pnl_percent: h.day_change_percent
+    }))
+  } : null;
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-atmospheric text-[#F8FAFC]">
       <Navbar />
-      <FlyingVidyaBot />
+      <FlyingVidyaBot context={portfolioContext} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Top Header Banner (AmazingUI Aesthetic) */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs">
+        {/* Top Header Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-gradient-to-r from-[#0B0F17] via-[#111827] to-[#0B0F17] border border-white/[0.1] rounded-3xl p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8FAF4] text-[#00D09C] text-xs font-extrabold uppercase tracking-wider mb-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#00D09C]/10 border border-[#00D09C]/30 text-[#00D09C] text-xs font-extrabold uppercase tracking-wider mb-2 shadow-[0_0_15px_rgba(0,208,156,0.15)]">
               <Sparkles className="w-3.5 h-3.5" /> Live Paper Trading &amp; Portfolio Tracker
             </div>
-            <h1 className="font-heading font-extrabold text-3xl sm:text-4xl text-[#0F172A] tracking-tight">
+            <h1 className="font-heading font-black text-3xl sm:text-4xl text-white tracking-tight">
               Virtual Portfolio
             </h1>
-            <p className="text-xs sm:text-sm font-medium text-[#64748B] mt-1">
+            <p className="text-xs sm:text-sm font-medium text-[#94A3B8] mt-1">
               Track live valuations, real-time returns, and price movements for your simulated stock holdings.
             </p>
           </div>
@@ -143,160 +211,82 @@ export default function VirtualPortfolio() {
           <div className="flex items-center gap-3 self-start sm:self-auto">
             <button
               onClick={loadPortfolioData}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-[#E2E8F0] hover:bg-[#F1F5F9] text-xs font-bold text-[#0F172A] shadow-xs transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#111827] border border-white/[0.1] hover:bg-white/[0.06] text-xs font-bold text-white shadow-xs transition-colors cursor-pointer"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#00D09C]" : ""}`} />
               Refresh Quotes
             </button>
 
             <Link
               to="/dashboard"
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs transition-all"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-[#00D09C] hover:bg-[#00B386] text-[#07090E] text-xs font-extrabold shadow-[0_0_20px_rgba(0,208,156,0.3)] transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-[#00D09C]" /> Buy New Stocks
+              <Plus className="w-4 h-4" /> Buy New Stocks
             </Link>
           </div>
         </div>
 
-        {/* Groww-style Real-time Portfolio Overview Metrics */}
+        {/* Portfolio summary */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* Total Portfolio Value */}
+          <div className="groww-card p-6 border-t-4 border-t-[#38BDF8] space-y-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Starting Virtual Capital</span>
+            <div className="font-heading font-black text-2xl text-white">₹{startingCapital.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">The virtual money you started with for paper trading.</p>
+          </div>
           <div className="groww-card p-6 border-t-4 border-t-[#00D09C] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#64748B]">Total Portfolio Value</span>
-              <Layers className="w-4 h-4 text-[#00D09C]" />
-            </div>
-            <div className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A]">
-              ₹{(summary?.net_worth ?? 10000).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-[11px] text-[#64748B] font-medium flex items-center gap-1">
-              <span>Holdings: ₹{currentHoldingsValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
-              <span>• Cash: ₹{(wallet?.virtual_cash ?? 10000).toLocaleString("en-IN")}</span>
-            </div>
+            <div className="flex items-center justify-between"><span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Current Portfolio Value</span><Layers className="w-4 h-4 text-[#00D09C]" /></div>
+            <div className="font-heading font-black text-2xl text-white">₹{(summary?.net_worth ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">The current total value of your cash and stocks.</p>
           </div>
-
-          {/* Invested Capital */}
-          <div className="groww-card p-6 border-t-4 border-t-[#64748B] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#64748B]">Invested Capital</span>
-              <Wallet className="w-4 h-4 text-[#64748B]" />
-            </div>
-            <div className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A]">
-              ₹{totalInvested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-            </div>
-            <div className="text-[11px] text-[#64748B] font-medium">
-              Deployed across {summary?.holdings_count ?? 0} active positions
-            </div>
+          <div className="groww-card p-6 border-t-4 border-t-[#818CF8] space-y-2">
+            <div className="flex items-center justify-between"><span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Invested Capital</span><Wallet className="w-4 h-4 text-[#818CF8]" /></div>
+            <div className="font-heading font-black text-2xl text-white">₹{totalInvested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">The amount of money currently used to buy stocks.</p>
           </div>
-
-          {/* Total Returns (Overall P&L Since Purchase) */}
-          <div
-            className={`groww-card p-6 border-t-4 ${
-              isTotalZero
-                ? "border-t-[#64748B]"
-                : isTotalProfit
-                ? "border-t-[#00D09C]"
-                : "border-t-[#EF4444]"
-            } space-y-2`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#64748B]">Total Returns (Net P&amp;L)</span>
-              {isTotalZero ? (
-                <Activity className="w-4 h-4 text-[#64748B]" />
-              ) : isTotalProfit ? (
-                <ArrowUpRight className="w-4 h-4 text-[#00D09C]" />
-              ) : (
-                <ArrowDownRight className="w-4 h-4 text-[#EF4444]" />
-              )}
-            </div>
-            <div
-              className={`font-heading font-extrabold text-2xl sm:text-3xl ${
-                isTotalZero
-                  ? "text-[#0F172A]"
-                  : isTotalProfit
-                  ? "text-[#00D09C]"
-                  : "text-[#EF4444]"
-              }`}
-            >
-              {isTotalZero ? "₹0.00" : `${isTotalProfit ? "+" : ""}₹${totalPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
-            </div>
-            <div>
-              {isTotalZero ? (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#64748B]">
-                  0.00% Break-even (No Net Change)
-                </span>
-              ) : isTotalProfit ? (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#E8FAF4] text-[#00D09C]">
-                  +{totalPnlPercent.toFixed(2)}% Overall Gain
-                </span>
-              ) : (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#FDF2F0] text-[#EF4444]">
-                  {totalPnlPercent.toFixed(2)}% Overall Loss
-                </span>
-              )}
-            </div>
+          <div className="groww-card p-6 border-t-4 border-t-[#A78BFA] space-y-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Holdings Value</span>
+            <div className="font-heading font-black text-2xl text-white">₹{currentHoldingsValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">What your currently held stocks are worth at live prices.</p>
           </div>
-
-          {/* 1-Day Market Returns */}
-          <div
-            className={`groww-card p-6 border-t-4 ${
-              isDayZero
-                ? "border-t-[#64748B]"
-                : isDayProfit
-                ? "border-t-[#00D09C]"
-                : "border-t-[#EF4444]"
-            } space-y-2`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#387ED1] animate-ping" />
-                <span className="text-xs font-bold uppercase tracking-wider text-[#64748B]">1-Day Market Trend</span>
-              </div>
-              <Activity className="w-4 h-4 text-[#387ED1]" />
-            </div>
-            <div
-              className={`font-heading font-extrabold text-2xl sm:text-3xl ${
-                isDayZero
-                  ? "text-[#0F172A]"
-                  : isDayProfit
-                  ? "text-[#00D09C]"
-                  : "text-[#EF4444]"
-              }`}
-            >
-              {isDayZero ? "₹0.00" : `${isDayProfit ? "+" : ""}₹${dayPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
-            </div>
-            <div>
-              {isDayZero ? (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#64748B]">
-                  0.00% Today
-                </span>
-              ) : isDayProfit ? (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#E8FAF4] text-[#00D09C]">
-                  +{dayPnlPercent.toFixed(2)}% Today (vs Prev Close)
-                </span>
-              ) : (
-                <span className="inline-block text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-[#FDF2F0] text-[#EF4444]">
-                  {dayPnlPercent.toFixed(2)}% Today (vs Prev Close)
-                </span>
-              )}
-            </div>
+          <div className="groww-card p-6 border-t-4 border-t-[#38BDF8] space-y-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Cash Available</span>
+            <div className="font-heading font-black text-2xl text-white">₹{cashAvailable.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">Virtual cash available for your next paper trade.</p>
+          </div>
+          <div className={`groww-card p-6 border-t-4 ${isTotalProfit ? "border-t-[#00D09C]" : "border-t-[#EF4444]"} space-y-2`}>
+            <div className="flex items-center justify-between"><span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Total P&amp;L</span>{isTotalProfit ? <ArrowUpRight className="w-4 h-4 text-[#00D09C]" /> : <ArrowDownRight className="w-4 h-4 text-[#EF4444]" />}</div>
+            <div className={`font-heading font-black text-2xl ${isTotalProfit ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{totalPnl >= 0 ? "+" : ""}₹{totalPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <p className="text-[11px] text-[#64748B]">Your overall gain or loss since your trades were made.</p>
+          </div>
+          <div className={`groww-card p-6 border-t-4 ${isDayProfit ? "border-t-[#00D09C]" : "border-t-[#EF4444]"} space-y-2`}>
+            <div className="flex items-center justify-between"><span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">Today's Performance</span><Activity className="w-4 h-4 text-[#38BDF8]" /></div>
+            <div className={`font-heading font-black text-2xl ${isDayProfit ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{dayPnl >= 0 ? "+" : ""}₹{dayPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+            <div className="text-[11px] font-bold text-[#94A3B8]">Today's P&amp;L %: {dayPnlPercent >= 0 ? "+" : ""}{dayPnlPercent.toFixed(2)}%</div>
+            <p className="text-[11px] text-[#64748B]">Change in your portfolio value compared with previous market close.</p>
+          </div>
+          <div className="groww-card p-6 border-t-4 border-t-[#F59E0B] space-y-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#94A3B8]">P&amp;L Breakdown</span>
+            <div className="flex justify-between text-sm font-bold"><span className="text-[#94A3B8]">Unrealized P&amp;L</span><span className={unrealizedPnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}>{unrealizedPnl >= 0 ? "+" : ""}₹{unrealizedPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
+            <p className="text-[11px] text-[#64748B]">Gain or loss on stocks you still hold.</p>
+            <div className="flex justify-between text-sm font-bold"><span className="text-[#94A3B8]">Realized P&amp;L</span><span className={realizedPnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}>{realizedPnl >= 0 ? "+" : ""}₹{realizedPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
+            <p className="text-[11px] text-[#64748B]">Gain or loss already locked in from sold stocks.</p>
           </div>
         </div>
 
         {/* Smart Financial Transparency & P&L Explainer Banner */}
-        <div className="bg-gradient-to-r from-[#0F172A] via-[#1E293B] to-[#0F172A] text-white rounded-3xl p-6 sm:p-7 border border-[#334155] shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-5">
+        <div className="bg-gradient-to-r from-[#0B0F17] via-[#111827] to-[#0B0F17] rounded-3xl p-6 sm:p-7 border border-white/[0.1] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#00D09C]/20 border border-[#00D09C]/40 text-[#00D09C] flex items-center justify-center shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-[#00D09C]/10 border border-[#00D09C]/30 text-[#00D09C] flex items-center justify-center shrink-0">
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
-              <div className="font-extrabold text-sm text-white flex items-center gap-2">
+              <div className="font-black text-sm text-white flex items-center gap-2">
                 Live Portfolio Intelligence &amp; Return Breakdown
                 <span className="w-2 h-2 rounded-full bg-[#00D09C] animate-pulse" />
               </div>
               <p className="text-xs text-[#94A3B8] font-medium leading-relaxed mt-1 max-w-3xl">
                 {holdings.length === 0
-                  ? "You have not placed any stock orders yet. Your full ₹10,000 virtual balance is ready for paper trading."
+                  ? `You have not placed any stock orders yet. Your ₹${cashAvailable.toLocaleString("en-IN", { minimumFractionDigits: 2 })} virtual cash is ready for paper trading. Starting capital is ₹${startingCapital.toLocaleString("en-IN", { minimumFractionDigits: 2 })}.`
                   : isTotalZero
                   ? `You invested ₹${totalInvested.toLocaleString("en-IN")} across ${holdings.length} stock(s). Since purchase price matches current price, your Net Position is Break-even (₹0.00 P&L). Today's stock price movement on the exchange is ${dayPnl >= 0 ? "+" : ""}₹${dayPnl.toLocaleString("en-IN")} (${dayPnlPercent >= 0 ? "+" : ""}${dayPnlPercent}% vs yesterday's closing price).`
                   : isTotalProfit
@@ -309,110 +299,158 @@ export default function VirtualPortfolio() {
           <div className="shrink-0 flex items-center gap-3">
             <button
               onClick={loadPortfolioData}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10 transition-colors flex items-center gap-1.5"
+              className="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white font-bold text-xs border border-white/[0.1] transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} /> Recalculate
             </button>
           </div>
         </div>
 
-        {/* Task Rewards Center (Clean English) */}
-        <section className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#E8FAF4] text-[#00D09C] flex items-center justify-center">
-                <Gift className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="font-heading font-extrabold text-xl text-[#0F172A]">
-                  Task Rewards Center
-                </h2>
-                <div className="text-xs text-[#64748B] font-medium">
-                  Complete onboarding milestones to claim free virtual trading capital!
-                </div>
-              </div>
-            </div>
+        <div className="flex justify-end">
+          <Link to="/quests" className="text-xs font-extrabold text-[#00D09C] hover:underline transition-colors flex items-center gap-1">
+            <span>View Quests &amp; Rewards</span>
+            <span>→</span>
+          </Link>
+        </div>
 
-            <div className="hidden sm:flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
-              <Sparkles className="w-3.5 h-3.5" /> Virtual Currency
-            </div>
+        {/* Investment Journey Chart */}
+        <section className="bg-[#0F172A]/70 border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 backdrop-blur-xl">
+          <div>
+            <h2 className="font-heading font-black text-xl sm:text-2xl text-white">Your Investment Journey</h2>
+            <p className="text-xs text-[#94A3B8] font-medium mt-1">How your total portfolio value has changed over time.</p>
           </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-            {(wallet?.tasks || []).map((task) => (
-              <div
-                key={task.id}
-                className={`p-4 rounded-2xl border transition-all ${
-                  task.is_claimed
-                    ? "bg-[#F8FAFC] border-[#E2E8F0] opacity-80"
-                    : "bg-white border-[#CBD5E1] shadow-xs hover:border-[#00D09C]"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h4 className="font-bold text-[#0F172A] text-sm">{task.title}</h4>
-                  <span className="text-xs font-extrabold px-2 py-0.5 rounded-md bg-[#E8FAF4] text-[#00D09C]">
-                    +₹{task.reward_cash}
-                  </span>
-                </div>
-                <p className="text-xs text-[#64748B] leading-relaxed mb-3">
-                  {task.description}
-                </p>
-
-                {task.is_claimed ? (
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#00D09C]">
-                    <CheckCircle2 className="w-4 h-4" /> Claimed
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => claimReward(task)}
-                    disabled={claimLoading}
-                    className="w-full py-2.5 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-bold transition-all shadow-xs"
-                  >
-                    Claim Reward (+₹{task.reward_cash})
-                  </button>
-                )}
-              </div>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-[#111827] border border-white/[0.06] rounded-2xl p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">Portfolio Value</div><div className="font-heading font-black text-xl text-white mt-1">₹{(summary?.net_worth ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div></div>
+            <div className="bg-[#111827] border border-white/[0.06] rounded-2xl p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">Today's Change</div><div className={`font-heading font-black text-xl mt-1 ${dayPnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{dayPnl >= 0 ? "+" : ""}₹{dayPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })} <span className="text-xs">({dayPnlPercent >= 0 ? "+" : ""}{dayPnlPercent.toFixed(2)}%)</span></div></div>
+            <div className="bg-[#111827] border border-white/[0.06] rounded-2xl p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">Overall P&amp;L</div><div className={`font-heading font-black text-xl mt-1 ${totalPnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{totalPnl >= 0 ? "+" : ""}₹{totalPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div></div>
           </div>
+          {portfolioHistory.length < 2 ? (
+            <div className="h-56 flex items-center justify-center border border-dashed border-white/[0.1] rounded-2xl text-sm text-[#94A3B8] text-center px-5">
+              Portfolio history will appear after your trades begin generating daily data.
+            </div>
+          ) : (
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={portfolioHistory} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+                  <defs><linearGradient id="portfolioValueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00D09C" stopOpacity={0.35} /><stop offset="100%" stopColor="#00D09C" stopOpacity={0.01} /></linearGradient></defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(date) => new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                  <YAxis domain={portfolioDomain} tickFormatter={(value) => `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} tick={{ fontSize: 11, fill: "#94A3B8" }} width={78} axisLine={false} />
+                  <Tooltip content={<PortfolioHistoryTooltip />} cursor={{ stroke: "#64748B", strokeDasharray: "4 4" }} />
+                  <Area type="monotone" dataKey="portfolio_value" stroke="#00D09C" strokeWidth={3} fill="url(#portfolioValueFill)" dot={{ r: 3, fill: "#00D09C", strokeWidth: 0 }} activeDot={{ r: 6, fill: "#00D09C", stroke: "#07090E", strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </section>
 
-        {/* Active Holdings Table (Live Yahoo Finance Real-time Tracking) */}
-        <section className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
+        {/* Stock-wise Investment Performance */}
+        <section className="bg-[#0F172A]/70 border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 backdrop-blur-xl">
+          <div>
+            <h2 className="font-heading font-black text-xl sm:text-2xl text-white">Stock-wise Investment Performance</h2>
+            <p className="text-xs text-[#94A3B8] font-medium mt-1">Overall returns are measured against each position's invested cost. Today's returns use the previous market close.</p>
+          </div>
+
+          {holdings.length === 0 ? (
+            <div className="p-8 border border-dashed border-white/[0.1] rounded-2xl text-center text-sm text-[#94A3B8]">Your stock-wise performance will appear after your first holding is created.</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/[0.08] text-[#94A3B8] font-bold uppercase tracking-wider">
+                      <th className="pb-3 px-3">Stock</th>
+                      <th className="pb-3 px-3 text-right">Invested</th>
+                      <th className="pb-3 px-3 text-right">Current Value</th>
+                      <th className="pb-3 px-3 text-right">Overall P&amp;L</th>
+                      <th className="pb-3 px-3 text-right">Today's P&amp;L</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {holdings.map((holding) => (
+                      <tr key={holding.symbol} className="hover:bg-white/[0.03] transition-colors">
+                        <td className="py-3 px-3 font-extrabold text-white">{holding.symbol.replace(".NS", "")}</td>
+                        <td className="py-3 px-3 text-right font-semibold text-[#94A3B8]">₹{holding.total_invested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                        <td className="py-3 px-3 text-right font-semibold text-white">₹{holding.current_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                        <td className={`py-3 px-3 text-right font-extrabold ${holding.unrealized_pnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{holding.unrealized_pnl >= 0 ? "+" : ""}₹{holding.unrealized_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                        <td className={`py-3 px-3 text-right font-extrabold ${holding.day_pnl >= 0 ? "text-[#00D09C]" : "text-[#EF4444]"}`}>{holding.day_pnl >= 0 ? "+" : ""}₹{holding.day_pnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-white/[0.08] pt-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="font-heading font-black text-lg text-white">{selectedSymbol.replace(".NS", "")} — Investment Performance</h3>
+                    <p className="text-xs text-[#94A3B8] mt-1">Invested Amount: ₹{(selectedHolding?.total_invested ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })} · Current Value: ₹{selectedCurrentValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })} · Overall P&amp;L: {selectedOverallPnl >= 0 ? "+" : ""}₹{selectedOverallPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })} · Today's P&amp;L: {selectedTodayPnl >= 0 ? "+" : ""}₹{selectedTodayPnl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <select value={selectedSymbol} onChange={(event) => setSelectedSymbol(event.target.value)} className="px-3 py-2.5 rounded-xl border border-white/[0.1] bg-[#111827] text-sm font-bold text-white outline-none focus:border-[#00D09C]">
+                    {holdings.map((holding) => <option key={holding.symbol} value={holding.symbol}>{holding.symbol.replace(".NS", "")}</option>)}
+                  </select>
+                </div>
+                {stockHistoryLoading ? (
+                  <div className="h-52 flex items-center justify-center text-sm text-[#94A3B8]">Loading investment history...</div>
+                ) : stockHistory.length < 2 ? (
+                  <div className="h-52 flex items-center justify-center border border-dashed border-white/[0.1] rounded-2xl text-sm text-[#94A3B8] text-center px-5">Stock history will appear after this holding has been valued on more than one day.</div>
+                ) : (
+                  <div className="h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={stockHistory} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+                        <defs><linearGradient id="selectedStockFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#38BDF8" stopOpacity={0.3} /><stop offset="100%" stopColor="#38BDF8" stopOpacity={0.02} /></linearGradient></defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
+                        <XAxis dataKey="date" tickFormatter={(date) => new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                        <YAxis domain={stockDomain} tickFormatter={(value) => `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} tick={{ fontSize: 11, fill: "#94A3B8" }} width={78} axisLine={false} />
+                        <Tooltip content={<StockHistoryTooltip />} />
+                        <ReferenceLine y={selectedHolding?.total_invested ?? 0} stroke="#64748B" strokeDasharray="5 5" label={{ value: "Invested Amount", position: "insideTopRight", fill: "#94A3B8", fontSize: 11 }} />
+                        <Area type="monotone" dataKey="position_value" stroke="#38BDF8" strokeWidth={3} fill="url(#selectedStockFill)" dot={{ r: 3, fill: "#38BDF8", strokeWidth: 0 }} activeDot={{ r: 6, fill: "#38BDF8", stroke: "#07090E", strokeWidth: 2 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* Active Holdings Table */}
+        <section className="bg-[#0F172A]/70 border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl space-y-6 backdrop-blur-xl">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-heading font-extrabold text-xl sm:text-2xl text-[#0F172A]">
+                <h2 className="font-heading font-black text-xl sm:text-2xl text-white">
                   Active Holdings ({holdings.length})
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#E8FAF4] text-[#00D09C] text-[11px] font-extrabold">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#00D09C]/15 border border-[#00D09C]/30 text-[#00D09C] text-[11px] font-extrabold">
                   Live NSE
                 </span>
               </div>
-              <div className="text-xs text-[#64748B] font-medium mt-0.5">
+              <div className="text-xs text-[#94A3B8] font-medium mt-0.5">
                 Real-time stock valuation updated directly from market data.
               </div>
             </div>
 
             <Link
               to="/dashboard"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#00D09C] hover:bg-[#00B386] text-[#0F172A] text-xs font-extrabold transition-all self-start sm:self-auto shadow-xs"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#00D09C] hover:bg-[#00B386] text-[#07090E] text-xs font-extrabold transition-all self-start sm:self-auto shadow-xs"
             >
               <Plus className="w-4 h-4" /> Explore Markets
             </Link>
           </div>
 
           {holdings.length === 0 ? (
-            <div className="p-12 border border-dashed border-[#CBD5E1] rounded-3xl text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#E8FAF4] text-[#00D09C] flex items-center justify-center mx-auto">
+            <div className="p-12 border border-dashed border-white/[0.1] rounded-3xl text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#00D09C]/10 border border-[#00D09C]/30 text-[#00D09C] flex items-center justify-center mx-auto">
                 <TrendingUp className="w-6 h-6" />
               </div>
-              <h3 className="font-heading font-extrabold text-lg text-[#0F172A]">No stocks in your portfolio yet</h3>
-              <p className="text-xs text-[#64748B] max-w-sm mx-auto">
-                You have ₹{(wallet?.virtual_cash ?? 10000).toLocaleString("en-IN")} virtual cash ready. Select any Indian stock to execute your first paper trade!
+              <h3 className="font-heading font-black text-lg text-white">No stocks in your portfolio yet</h3>
+              <p className="text-xs text-[#94A3B8] max-w-sm mx-auto">
+                You have ₹{cashAvailable.toLocaleString("en-IN", { minimumFractionDigits: 2 })} virtual cash ready. Select any Indian stock to execute your first paper trade!
               </p>
               <Link
                 to="/dashboard"
-                className="inline-block mt-3 px-6 py-2.5 rounded-full bg-[#0F172A] text-white text-xs font-bold hover:bg-[#1E293B] shadow-xs"
+                className="inline-block mt-3 px-6 py-2.5 rounded-full bg-[#00D09C] text-[#07090E] text-xs font-extrabold hover:bg-[#00B386] shadow-xs"
               >
                 Explore &amp; Buy Stocks
               </Link>
@@ -421,53 +459,53 @@ export default function VirtualPortfolio() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-[#F1F5F9] text-[#64748B] font-bold uppercase tracking-wider">
+                  <tr className="border-b border-white/[0.08] text-[#94A3B8] font-bold uppercase tracking-wider">
                     <th className="pb-3 px-3">Instrument</th>
                     <th className="pb-3 px-3 text-right">Shares (Qty)</th>
                     <th className="pb-3 px-3 text-right">Avg. Buy Price</th>
                     <th className="pb-3 px-3 text-right">LTP (Live Price)</th>
                     <th className="pb-3 px-3 text-right">Current Value</th>
-                    <th className="pb-3 px-3 text-right">Total Returns (P&amp;L)</th>
-                    <th className="pb-3 px-3 text-right">1-Day Returns</th>
+                    <th className="pb-3 px-3 text-right">Overall Returns (P&amp;L)</th>
+                    <th className="pb-3 px-3 text-right">Today's Returns</th>
                     <th className="pb-3 px-3 text-center">Quick Trade</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F1F5F9]">
+                <tbody className="divide-y divide-white/[0.06]">
                   {holdings.map((h) => {
                     const isHoldDayProfit = (h.day_change_percent ?? 0) >= 0;
                     return (
-                      <tr key={h.id} className="hover:bg-[#F8FAFC] transition-colors">
+                      <tr key={h.id} className="hover:bg-white/[0.03] transition-colors">
                         <td className="py-4 px-3">
                           <Link to={`/stock/${encodeURIComponent(h.symbol)}`} className="group">
-                            <div className="font-extrabold text-sm text-[#0F172A] group-hover:text-[#00D09C] transition-colors">
+                            <div className="font-bold text-sm text-white group-hover:text-[#00D09C] transition-colors">
                               {h.company_name}
                             </div>
-                            <div className="text-[11px] text-[#64748B] font-semibold uppercase">
+                            <div className="text-[11px] text-[#94A3B8] font-semibold uppercase">
                               {h.symbol.replace(".NS", "")} • NSE
                             </div>
                           </Link>
                         </td>
-                        <td className="py-4 px-3 text-right font-extrabold text-[#0F172A]">{h.quantity}</td>
-                        <td className="py-4 px-3 text-right font-semibold text-[#64748B]">
+                        <td className="py-4 px-3 text-right font-extrabold text-white">{h.quantity}</td>
+                        <td className="py-4 px-3 text-right font-semibold text-[#94A3B8]">
                           <div>₹{h.avg_buy_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
-                          <div className="text-[10px] text-[#94A3B8]">Cost: ₹{h.total_invested.toLocaleString("en-IN")}</div>
+                          <div className="text-[10px] text-[#64748B]">Cost: ₹{h.total_invested.toLocaleString("en-IN")}</div>
                         </td>
                         <td className="py-4 px-3 text-right">
-                          <div className="font-extrabold text-[#0F172A]">
+                          <div className="font-black text-white">
                             ₹{h.current_price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                           </div>
                           <div className={`text-[10px] font-bold ${isHoldDayProfit ? "text-[#00D09C]" : "text-[#EF4444]"}`}>
                             {isHoldDayProfit ? "+" : ""}{h.day_change_percent ?? 0}%
                           </div>
                         </td>
-                        <td className="py-4 px-3 text-right font-extrabold text-[#0F172A]">
+                        <td className="py-4 px-3 text-right font-black text-white">
                           ₹{h.current_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                         </td>
                         <td className="py-4 px-3 text-right">
                           <div
-                            className={`font-extrabold text-sm ${
+                            className={`font-black text-sm ${
                               (h.unrealized_pnl ?? 0) === 0
-                                ? "text-[#0F172A]"
+                                ? "text-white"
                                 : h.unrealized_pnl > 0
                                 ? "text-[#00D09C]"
                                 : "text-[#EF4444]"
@@ -479,15 +517,15 @@ export default function VirtualPortfolio() {
                           </div>
                           <div className="mt-0.5">
                             {(h.unrealized_pnl ?? 0) === 0 ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#64748B]">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/[0.06] text-[#94A3B8]">
                                 Break-even
                               </span>
                             ) : h.unrealized_pnl > 0 ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#E8FAF4] text-[#00D09C]">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#00D09C]/15 border border-[#00D09C]/30 text-[#00D09C]">
                                 +{h.pnl_percent}% Gain
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#FDF2F0] text-[#EF4444]">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/30 text-[#EF4444]">
                                 {h.pnl_percent}% Loss
                               </span>
                             )}
@@ -497,7 +535,7 @@ export default function VirtualPortfolio() {
                           <div
                             className={`font-bold text-xs ${
                               (h.day_pnl ?? 0) === 0
-                                ? "text-[#64748B]"
+                                ? "text-[#94A3B8]"
                                 : (h.day_pnl ?? 0) > 0
                                 ? "text-[#00D09C]"
                                 : "text-[#EF4444]"
@@ -507,7 +545,7 @@ export default function VirtualPortfolio() {
                               ? "₹0.00 (0.00%)"
                               : `${(h.day_pnl ?? 0) > 0 ? "+" : ""}₹${(h.day_pnl ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })} (${h.day_change_percent ?? 0}%)`}
                           </div>
-                          <div className="text-[10px] text-[#94A3B8]">vs prev close</div>
+                          <div className="text-[10px] text-[#64748B]">vs prev close</div>
                         </td>
                         <td className="py-4 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
@@ -520,7 +558,7 @@ export default function VirtualPortfolio() {
                                 });
                                 setTradeModalMode("BUY");
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-[#E8FAF4] hover:bg-[#D1F5EA] text-[#00D09C] font-extrabold text-xs transition-colors"
+                              className="px-3 py-1.5 rounded-xl bg-[#00D09C]/15 hover:bg-[#00D09C]/25 text-[#00D09C] border border-[#00D09C]/30 font-extrabold text-xs transition-colors cursor-pointer"
                             >
                               BUY
                             </button>
@@ -533,7 +571,7 @@ export default function VirtualPortfolio() {
                                 });
                                 setTradeModalMode("SELL");
                               }}
-                              className="px-3 py-1.5 rounded-xl bg-[#FDF2F0] hover:bg-[#FCE8E6] text-[#EF4444] border border-[#FADCD8] font-extrabold text-xs transition-colors"
+                              className="px-3 py-1.5 rounded-xl bg-[#EF4444]/15 hover:bg-[#EF4444]/25 text-[#EF4444] border border-[#EF4444]/30 font-extrabold text-xs transition-colors cursor-pointer"
                             >
                               SELL
                             </button>
@@ -549,21 +587,21 @@ export default function VirtualPortfolio() {
         </section>
 
         {/* Order Execution History (Passbook) */}
-        <section className="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-xs space-y-4">
+        <section className="bg-[#0F172A]/70 border border-white/[0.08] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 backdrop-blur-xl">
           <div className="flex items-center gap-2.5">
-            <Clock className="w-5 h-5 text-[#64748B]" />
-            <h2 className="font-heading font-extrabold text-xl text-[#0F172A]">
+            <Clock className="w-5 h-5 text-[#94A3B8]" />
+            <h2 className="font-heading font-black text-xl text-white">
               Order Execution History
             </h2>
           </div>
 
           {transactions.length === 0 ? (
-            <p className="text-xs text-[#64748B] py-2">No completed orders recorded yet.</p>
+            <p className="text-xs text-[#94A3B8] py-2">No completed orders recorded yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-[#F1F5F9] text-[#64748B] font-bold uppercase tracking-wider">
+                  <tr className="border-b border-white/[0.08] text-[#94A3B8] font-bold uppercase tracking-wider">
                     <th className="pb-3 px-3">Type</th>
                     <th className="pb-3 px-3">Instrument</th>
                     <th className="pb-3 px-3 text-right">Quantity</th>
@@ -573,24 +611,24 @@ export default function VirtualPortfolio() {
                     <th className="pb-3 px-3 text-right">Timestamp</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F1F5F9]">
+                <tbody className="divide-y divide-white/[0.06]">
                   {transactions.map((t) => (
-                    <tr key={t.id} className="hover:bg-[#F8FAFC]">
+                    <tr key={t.id} className="hover:bg-white/[0.03]">
                       <td className="py-3 px-3">
                         <span
                           className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase ${
                             t.trade_type === "BUY"
-                              ? "bg-[#E8FAF4] text-[#00D09C]"
-                              : "bg-[#FDF2F0] text-[#EF4444]"
+                              ? "bg-[#00D09C]/15 border border-[#00D09C]/30 text-[#00D09C]"
+                              : "bg-[#EF4444]/15 border border-[#EF4444]/30 text-[#EF4444]"
                           }`}
                         >
                           {t.trade_type}
                         </span>
                       </td>
-                      <td className="py-3 px-3 font-bold text-[#0F172A]">{t.company_name}</td>
-                      <td className="py-3 px-3 text-right font-semibold text-[#0F172A]">{t.quantity}</td>
-                      <td className="py-3 px-3 text-right font-semibold text-[#64748B]">₹{t.price_per_share}</td>
-                      <td className="py-3 px-3 text-right font-extrabold text-[#0F172A]">
+                      <td className="py-3 px-3 font-bold text-white">{t.company_name}</td>
+                      <td className="py-3 px-3 text-right font-semibold text-white">{t.quantity}</td>
+                      <td className="py-3 px-3 text-right font-semibold text-[#94A3B8]">₹{t.price_per_share}</td>
+                      <td className="py-3 px-3 text-right font-black text-white">
                         ₹{t.total_amount.toLocaleString("en-IN")}
                       </td>
                       <td className="py-3 px-3 text-right font-bold">
@@ -602,8 +640,8 @@ export default function VirtualPortfolio() {
                           <span className="text-[#64748B]">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-3 text-right text-[11px] text-[#64748B]">
-                        {t.timestamp.slice(0, 16)}
+                      <td className="py-3 px-3 text-right text-[11px] text-[#94A3B8]">
+                        {t.timestamp ? t.timestamp.slice(0, 16) : ""}
                       </td>
                     </tr>
                   ))}
@@ -613,42 +651,6 @@ export default function VirtualPortfolio() {
           )}
         </section>
       </main>
-
-      {/* Task Input Modal */}
-      {activeTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm bg-white rounded-3xl p-6 space-y-4 border border-[#E2E8F0] shadow-2xl">
-            <h3 className="font-heading font-extrabold text-lg text-[#0F172A]">{activeTask.title}</h3>
-            <p className="text-xs text-[#64748B]">{activeTask.description}</p>
-            <form onSubmit={submitTaskModal} className="space-y-3">
-              <input
-                type={activeTask.id === "phone_bonus" ? "tel" : "date"}
-                required
-                placeholder={activeTask.id === "phone_bonus" ? "Enter Mobile Number" : ""}
-                value={taskInput}
-                onChange={(e) => setTaskInput(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-[#E2E8F0] text-sm text-[#0F172A] outline-none focus:border-[#00D09C]"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTask(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-[#F1F5F9] text-xs font-bold text-[#64748B]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={claimLoading}
-                  className="flex-1 py-2.5 rounded-xl bg-[#00D09C] hover:bg-[#00B386] text-white text-xs font-bold shadow-sm"
-                >
-                  {claimLoading ? "Claiming..." : `Claim +₹${activeTask.reward_cash}`}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Buy/Sell Modal */}
       <BuySellModal

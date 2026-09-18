@@ -11,12 +11,12 @@ export default function StockCard({ stock, index = 0 }) {
 
   const signalBadge = stock.signal ? (
     <span
-      className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
         stock.signal === "BUY"
-          ? "bg-[#E8FAF4] text-[#00D09C] border border-[#B3F2DF]"
+          ? "bg-[#00D09C]/15 text-[#00D09C] border border-[#00D09C]/30"
           : stock.signal === "SELL"
-          ? "bg-[#FDF2F0] text-[#EB5B3C] border border-[#FADCD8]"
-          : "bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]"
+          ? "bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30"
+          : "bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30"
       }`}
     >
       {stock.signal}
@@ -33,12 +33,12 @@ export default function StockCard({ stock, index = 0 }) {
         {/* Top Row: Symbol Avatar & Signal Badge */}
         <div>
           <div className="flex items-start justify-between gap-2 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] group-hover:border-[#00D09C]/40 group-hover:bg-[#E8FAF4] flex items-center justify-center font-bold text-xs text-[#0F172A] group-hover:text-[#00D09C] transition-colors shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] group-hover:border-[#00D09C]/40 group-hover:bg-[#00D09C]/10 flex items-center justify-center font-extrabold text-xs text-white group-hover:text-[#00D09C] transition-colors shrink-0 shadow-xs">
               {symbolClean.slice(0, 3)}
             </div>
             <div className="flex items-center gap-1.5">
               {signalBadge}
-              <span className="text-[10px] font-semibold text-[#64748B] bg-[#F1F5F9] px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-extrabold text-[#94A3B8] bg-white/[0.06] border border-white/[0.06] px-1.5 py-0.5 rounded">
                 NSE
               </span>
             </div>
@@ -46,11 +46,11 @@ export default function StockCard({ stock, index = 0 }) {
 
           {/* Company Name & Sector */}
           <div className="mb-4">
-            <h4 className="font-bold text-[#0F172A] text-base group-hover:text-[#00D09C] transition-colors truncate">
+            <h4 className="font-bold text-white text-base group-hover:text-[#00D09C] transition-colors truncate">
               {stock.name || symbolClean}
             </h4>
-            <div className="text-xs font-medium text-[#64748B] mt-0.5 flex items-center gap-1.5">
-              <span className="uppercase font-semibold">{symbolClean}</span>
+            <div className="text-xs font-medium text-[#94A3B8] mt-0.5 flex items-center gap-1.5">
+              <span className="uppercase font-semibold text-white/80">{symbolClean}</span>
               {stock.sector && (
                 <>
                   <span>•</span>
@@ -62,16 +62,16 @@ export default function StockCard({ stock, index = 0 }) {
         </div>
 
         {/* Bottom Row: Live Price and +/-% pill */}
-        <div className="pt-3 border-t border-[#F1F5F9] flex items-baseline justify-between">
-          <div className="font-heading font-extrabold text-xl text-[#0F172A]">
+        <div className="pt-3 border-t border-white/[0.08] flex items-baseline justify-between">
+          <div className="font-heading font-black text-xl text-white">
             ₹{(stock.price ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
           </div>
 
           <div
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold ${
               isPositive
-                ? "bg-[#E8FAF4] text-[#00D09C]"
-                : "bg-[#FDF2F0] text-[#EB5B3C]"
+                ? "bg-[#00D09C]/15 text-[#00D09C] border border-[#00D09C]/30"
+                : "bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30"
             }`}
           >
             {isPositive ? (

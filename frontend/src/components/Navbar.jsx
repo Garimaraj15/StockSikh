@@ -2,17 +2,19 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth, API } from "../context/AuthContext";
 import axios from "axios";
+import NotificationCenter from "./NotificationCenter";
 import {
   LayoutDashboard,
   LogOut,
   Sparkles,
   Wallet,
   Users,
-  Globe2
+  Trophy,
+  Layers
 } from "lucide-react";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, logout, authConfig } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [indices, setIndices] = useState([]);
@@ -20,6 +22,17 @@ export default function Navbar() {
 
   useEffect(() => {
     let isMounted = true;
+    const refreshWalletCash = () => {
+      if (user?.id) {
+        axios
+          .get(`${API}/wallet/balance`, authConfig())
+          .then((res) => {
+            if (isMounted) setWalletCash(res.data?.virtual_cash);
+          })
+          .catch(() => {});
+      }
+    };
+
     axios
       .get(`${API}/stocks/indices`)
       .then((res) => {
@@ -29,81 +42,96 @@ export default function Navbar() {
       })
       .catch(() => {});
 
-    if (user?.id) {
-      axios
-        .get(`${API}/wallet/balance?user_id=${user.id}`)
-        .then((res) => {
-          if (isMounted) setWalletCash(res.data?.virtual_cash);
-        })
-        .catch(() => {});
-    }
+    refreshWalletCash();
+    window.addEventListener("stocksikh:wallet-updated", refreshWalletCash);
 
     return () => {
       isMounted = false;
+      window.removeEventListener("stocksikh:wallet-updated", refreshWalletCash);
     };
-  }, [user, location.pathname]);
+  }, [user, location.pathname, authConfig]);
 
   return (
-    <nav className="sticky top-0 z-40 bg-white border-b border-[#E2E8F0] shadow-sm">
-      {/* Top Indices Strip (Groww-style Market Ribbon) */}
-      {indices.length > 0 && (
-        <div className="bg-[#F8FAFC] border-b border-[#E2E8F0] px-4 py-1.5 overflow-x-auto no-scrollbar">
-          <div className="max-w-7xl mx-auto flex items-center gap-6 text-xs whitespace-nowrap">
-            <span className="text-[#64748B] font-bold flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00D09C] animate-pulse"></span>
-              LIVE NSE MARKETS
-            </span>
-            {indices.map((idx) => {
-              const isPositive = (idx.change ?? 0) >= 0;
-              return (
-                <div key={idx.symbol} className="flex items-center gap-2">
-                  <span className="font-semibold text-[#0F172A]">{idx.display || idx.name}</span>
-                  <span className="font-bold text-[#0F172A]">
-                    {idx.price?.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </span>
-                  <span
-                    className={`flex items-center text-[11px] font-semibold ${
-                      isPositive ? "text-[#00D09C]" : "text-[#EB5B3C]"
-                    }`}
-                  >
-                    {isPositive ? "+" : ""}
-                    {idx.change?.toFixed(2)} ({isPositive ? "+" : ""}
-                    {idx.change_percent?.toFixed(2)}%)
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand Logo & Links */}
-        <div className="flex items-center gap-6 lg:gap-8">
-          <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#00D09C] flex items-center justify-center text-white shadow-sm group-hover:scale-105 transition-transform">
-              <Sparkles className="w-5 h-5 text-white" />
+    <nav className="sticky top-0 z-40 bg-[#0B0F17]/95 backdrop-blur-xl border-b border-white/[0.08] shadow-2xl">
+      {/* Top Indices Strip (Groww-style Dark Market Ribbon) */}
+      {indices.length > 0 && (() => {
+        const liveIndices = indices.filter((idx) => idx.available !== false && idx.price !== null);
+        const anyLive = liveIndices.length > 0;
+        return (
+          <div className="bg-[#07090E]/90 border-b border-white/[0.06] px-4 py-1.5 overflow-x-auto no-scrollbar">
+            <div className="max-w-7xl mx-auto flex items-center gap-6 text-xs whitespace-nowrap">
+              <span className="text-[#94A3B8] font-bold flex items-center gap-1.5">
+                {anyLive ? (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00D09C] animate-pulse shadow-[0_0_8px_#00D09C]" />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]" />
+                )}
+                {anyLive ? "LIVE NSE MARKETS" : "NSE MARKETS"}
+              </span>
+              {indices.map((idx) => {
+                const isAvailable = idx.available !== false && idx.price !== null;
+                if (!isAvailable) {
+                  return (
+                    <div key={idx.symbol} className="flex items-center gap-2">
+                      <span className="font-semibold text-white/90">{idx.display || idx.name}</span>
+                      <span className="text-[11px] font-semibold text-[#64748B]">Data unavailable</span>
+                    </div>
+                  );
+                }
+                const isPositive = (idx.change ?? 0) >= 0;
+                return (
+                  <div key={idx.symbol} className="flex items-center gap-2">
+                    <span className="font-semibold text-white/90">{idx.display || idx.name}</span>
+                    <span className="font-bold text-white">
+                      {idx.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                    {idx.change !== null && idx.change_percent !== null ? (
+                      <span
+                        className={`flex items-center text-[11px] font-semibold ${
+                          isPositive ? "text-[#00D09C]" : "text-[#EF4444]"
+                        }`}
+                      >
+                        {isPositive ? "+" : ""}
+                        {idx.change.toFixed(2)} ({isPositive ? "+" : ""}
+                        {idx.change_percent.toFixed(2)}%)
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
-            <div>
-              <div className="font-heading font-extrabold text-xl tracking-tight text-[#0F172A] flex items-center gap-1">
+          </div>
+        );
+      })()}
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        {/* Logo & Navigation */}
+        <div className="flex items-center gap-8">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 group cursor-pointer focus:outline-none"
+          >
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#00D09C] to-[#00FFB2] text-[#07090E] flex items-center justify-center font-extrabold shadow-[0_0_20px_rgba(0,208,156,0.35)] transition-transform group-hover:scale-105">
+              <Sparkles className="w-4 h-4 fill-current" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-heading font-black text-lg sm:text-xl tracking-tight text-white leading-none">
                 Stock<span className="text-[#00D09C]">Sikh</span>
-                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-[#0F172A] text-white uppercase ml-1">AI</span>
-              </div>
-              <div className="text-[10px] font-bold text-[#64748B] tracking-wider uppercase">
-                Data Science Trading Lab
-              </div>
+              </span>
+              <span className="text-[9px] font-extrabold text-[#94A3B8] tracking-widest uppercase">
+                AI Trading Lab
+              </span>
             </div>
           </Link>
 
-          {/* Navigation Links */}
-          <div className="hidden lg:flex items-center gap-1">
+          {/* Desktop Nav Links */}
+          <div className="hidden md:flex items-center gap-1.5">
             <Link
               to="/dashboard"
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
-                location.pathname === "/dashboard"
-                  ? "text-[#00D09C] bg-[#E8FAF4]"
-                  : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                location.pathname === "/" || location.pathname === "/dashboard"
+                  ? "text-[#00D09C] bg-[#00D09C]/10 border border-[#00D09C]/30 shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
@@ -112,67 +140,82 @@ export default function Navbar() {
 
             <Link
               to="/portfolio"
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                 location.pathname === "/portfolio"
-                  ? "text-[#00D09C] bg-[#E8FAF4]"
-                  : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]"
+                  ? "text-[#00D09C] bg-[#00D09C]/10 border border-[#00D09C]/30 shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               <Wallet className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
-              Virtual Portfolio
+              Portfolio
             </Link>
 
             <Link
-              to="/pro-helpers"
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
-                location.pathname === "/pro-helpers"
-                  ? "text-[#00D09C] bg-[#E8FAF4]"
-                  : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]"
+              to="/quests"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                location.pathname === "/quests"
+                  ? "text-[#00D09C] bg-[#00D09C]/10 border border-[#00D09C]/30 shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.04]"
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
+              Quests &amp; XP
+            </Link>
+
+            <Link
+              to="/community"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                location.pathname === "/community"
+                  ? "text-[#00D09C] bg-[#00D09C]/10 border border-[#00D09C]/30 shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               <Users className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
-              Pro Helpers
+              Community
             </Link>
 
             <Link
-              to="/creators"
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
-                location.pathname === "/creators"
-                  ? "text-[#00D09C] bg-[#E8FAF4]"
-                  : "text-[#475569] hover:text-[#0F172A] hover:bg-[#F1F5F9]"
+              to="/asset-matrix"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                location.pathname === "/asset-matrix"
+                  ? "text-[#00D09C] bg-[#00D09C]/10 border border-[#00D09C]/30 shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.04]"
               }`}
             >
-              <Globe2 className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
-              Global Creators
+              <Layers className="w-3.5 h-3.5 inline mr-1.5 -mt-0.5" />
+              Asset Matrix
             </Link>
           </div>
         </div>
 
-        {/* User Profile & Virtual Wallet Balance Pill */}
+        {/* User Profile, Notifications & Virtual Wallet Balance Pill */}
         <div className="flex items-center gap-3">
+          {/* Notification Center */}
+          <NotificationCenter />
+
           {user ? (
             <div className="flex items-center gap-2.5">
               {/* Virtual Cash Pill */}
               <Link
                 to="/portfolio"
-                className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#E8FAF4] border border-[#B3F2DF] text-xs font-extrabold text-[#00D09C] hover:scale-105 transition-transform"
-                title="Your Virtual Trading Balance"
+                className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#00D09C]/10 border border-[#00D09C]/30 text-xs font-extrabold text-[#00D09C] hover:scale-105 transition-transform shadow-[0_0_15px_rgba(0,208,156,0.15)]"
+                title="Virtual cash available for your next paper trade."
               >
                 <Wallet className="w-3.5 h-3.5" />
-                <span>₹{(walletCash ?? 10000).toLocaleString("en-IN")}</span>
+                <span>Cash: ₹{(walletCash ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
               </Link>
 
               {/* User Avatar */}
-              <div className="flex items-center gap-2 bg-[#F1F5F9] px-3 py-1.5 rounded-full border border-[#E2E8F0]">
-                <div className="w-6 h-6 rounded-full bg-[#0F172A] text-white flex items-center justify-center text-xs font-bold">
+              <div className="flex items-center gap-2 bg-[#111827] px-3 py-1.5 rounded-full border border-white/[0.08]">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#00D09C] to-[#7C3AED] text-white flex items-center justify-center text-xs font-black shadow-xs">
                   {user.name ? user.name.charAt(0).toUpperCase() : "U"}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <div className="text-xs font-bold text-[#0F172A]">
+                  <div className="text-xs font-bold text-white">
                     {user.name?.split(" ")[0]}
                   </div>
                 </div>
-                <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-white text-[#387ED1] uppercase">
+                <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-white/[0.08] text-[#00D09C] uppercase border border-white/[0.06]">
                   {user.role === "pro" ? "PRO" : "LEARNER"}
                 </span>
               </div>
@@ -182,7 +225,7 @@ export default function Navbar() {
                   logout();
                   navigate("/");
                 }}
-                className="p-2 rounded-full text-[#64748B] hover:text-[#EB5B3C] hover:bg-[#FDF2F0] transition-colors"
+                className="p-2 rounded-full text-[#94A3B8] hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors cursor-pointer"
                 title="Logout"
               >
                 <LogOut className="w-4 h-4" />
@@ -192,13 +235,13 @@ export default function Navbar() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate("/login")}
-                className="px-4 py-2 rounded-full text-xs font-bold text-[#0F172A] hover:bg-[#F1F5F9] transition-colors"
+                className="px-4 py-2 rounded-full text-xs font-bold text-[#CBD5E1] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
                 Log In
               </button>
               <button
                 onClick={() => navigate("/signup")}
-                className="px-5 py-2 rounded-full text-xs font-extrabold text-white bg-[#00D09C] hover:bg-[#00B386] shadow-sm hover:shadow transition-all"
+                className="px-5 py-2 rounded-full text-xs font-extrabold text-[#07090E] bg-[#00D09C] hover:bg-[#00B386] shadow-[0_0_20px_rgba(0,208,156,0.3)] hover:scale-105 transition-all cursor-pointer"
               >
                 Join &amp; Get ₹10,000
               </button>

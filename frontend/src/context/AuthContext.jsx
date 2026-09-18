@@ -63,6 +63,20 @@ export function AuthProvider({ children }) {
     };
   };
 
+  const authConfig = () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      return {};
+    }
+
+    return {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -71,6 +85,7 @@ export function AuthProvider({ children }) {
         login,
         logout,
         authHeaders,
+        authConfig,
       }}
     >
       {children}

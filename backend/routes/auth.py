@@ -36,6 +36,15 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
+def normalize_role(role_input: Optional[str]) -> str:
+    if not role_input:
+        return "learner"
+    cleaned = str(role_input).strip().lower()
+    if cleaned in ["pro", "pro learner", "pro_learner", "mentor", "pro mentor", "pro_mentor"]:
+        return "pro"
+    return "learner"
+
 @router.post("/signup")
 def signup(
     user: UserSignup,
@@ -52,7 +61,7 @@ def signup(
         name=user.name,
         email=user.email,
         password_hash=hash_password(user.password),
-        role=user.role or "learner",
+        role=normalize_role(user.role),
         phone=user.phone,
         dob=user.dob,
         points=500
@@ -122,31 +131,59 @@ def login(
         }
     }
 
-@router.get("/me")
-def get_me(
+def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ):
     if not credentials:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in."
+        )
 
     token = credentials.credentials
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
         user_id = payload.get("user_id")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication token"
+            )
+
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
 
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return user
+
+@router.get("/me")
+def get_me(
+    current_user: User = Depends(get_current_user)
+):
     return {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "role": user.role,
-        "phone": user.phone,
-        "dob": user.dob,
-        "points": user.points
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "role": current_user.role,
+        "phone": current_user.phone,
+        "dob": current_user.dob,
+        "points": current_user.points
     }

@@ -5,6 +5,8 @@ import yfinance as yf
 
 from database.database import get_db
 from models.watchlist import Watchlist
+from models.user import User
+from routes.auth import get_current_user
 from routes.stocks import calculate_technical_signals
 
 router = APIRouter(
@@ -18,40 +20,82 @@ def test():
 
 @router.get("/")
 def get_watchlist(
-    user_id: int = Query(..., description="User ID"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    items = db.query(Watchlist).filter(Watchlist.user_id == user_id).all()
-    item_list = [{"id": item.id, "user_id": item.user_id, "symbol": item.symbol} for item in items]
-    return {"watchlist": item_list}
+    items = (
+        db.query(Watchlist)
+        .filter(Watchlist.user_id == current_user.id)
+        .all()
+    )
+
+    return {
+        "watchlist": [
+            {
+                "id": item.id,
+                "user_id": item.user_id,
+                "symbol": item.symbol
+            }
+            for item in items
+        ]
+    }
 
 @router.get("/all")
 def get_all_watchlist(
-    user_id: int = Query(..., description="User ID"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    items = db.query(Watchlist).filter(Watchlist.user_id == user_id).all()
-    return [{"id": item.id, "user_id": item.user_id, "symbol": item.symbol} for item in items]
+    items = (
+        db.query(Watchlist)
+        .filter(Watchlist.user_id == current_user.id)
+        .all()
+    )
+
+    return [
+        {
+            "id": item.id,
+            "user_id": item.user_id,
+            "symbol": item.symbol
+        }
+        for item in items
+    ]
 
 @router.get("/details")
 def get_watchlist_details(
-    user_id: int = Query(..., description="User ID"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    items = db.query(Watchlist).filter(Watchlist.user_id == user_id).all()
+    items = (
+        db.query(Watchlist)
+        .filter(Watchlist.user_id == current_user.id)
+        .all()
+    )
+
     result = []
 
     for item in items:
         try:
             ticker = yf.Ticker(item.symbol)
             data = ticker.history(period="1mo")
-            if data.empty or len(data) == 0:
+
+            if data.empty:
                 continue
 
             curr_price, ma20, ma50, rsi, signal = calculate_technical_signals(data)
-            prev_price = round(float(data["Close"].iloc[-2]), 2) if len(data) >= 2 else curr_price
+
+            prev_price = (
+                round(float(data["Close"].iloc[-2]), 2)
+                if len(data) >= 2
+                else curr_price
+            )
+
             change = round(curr_price - prev_price, 2)
-            change_percent = round((change / prev_price) * 100, 2) if prev_price > 0 else 0.0
+
+            change_percent = (
+                round((change / prev_price) * 100, 2)
+                if prev_price > 0
+                else 0.0
+            )
 
             result.append({
                 "id": item.id,
@@ -64,77 +108,110 @@ def get_watchlist_details(
                 "rsi": rsi,
                 "ma20": ma20
             })
+
         except Exception as e:
-            print(f"Error loading watchlist details for {item.symbol}: {e}")
-            result.append({
-                "id": item.id,
-                "symbol": item.symbol,
-                "name": item.symbol.replace(".NS", ""),
-                "price": 0.0,
-                "change": 0.0,
-                "change_percent": 0.0,
-                "signal": "HOLD",
-                "rsi": 50.0,
-                "ma20": 0.0
-            })
+            print(
+                f"Error loading watchlist details for {item.symbol}: {e}"
+            )
 
     return result
 
 @router.post("/add")
 def add_watchlist(
-    user_id: int = Query(...),
     symbol: str = Query(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     symbol = symbol.strip().upper()
-    existing = db.query(Watchlist).filter(
-        Watchlist.user_id == user_id,
-        Watchlist.symbol == symbol
-    ).first()
+
+    existing = (
+        db.query(Watchlist)
+        .filter(
+            Watchlist.user_id == current_user.id,
+            Watchlist.symbol == symbol
+        )
+        .first()
+    )
 
     if existing:
-        return {"message": "Stock already in watchlist", "symbol": symbol}
+        return {
+            "message": "Stock already in watchlist",
+            "symbol": symbol
+        }
 
-    item = Watchlist(user_id=user_id, symbol=symbol)
+    item = Watchlist(
+        user_id=current_user.id,
+        symbol=symbol
+    )
+
     db.add(item)
     db.commit()
     db.refresh(item)
-    return {"message": "Added Successfully", "id": item.id, "symbol": symbol}
+
+    return {
+        "message": "Added Successfully",
+        "id": item.id,
+        "symbol": symbol
+    }
 
 @router.delete("/remove")
 def remove_watchlist(
-    user_id: int = Query(...),
     symbol: str = Query(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     symbol = symbol.strip().upper()
-    item = db.query(Watchlist).filter(
-        Watchlist.user_id == user_id,
-        Watchlist.symbol == symbol
-    ).first()
+
+    item = (
+        db.query(Watchlist)
+        .filter(
+            Watchlist.user_id == current_user.id,
+            Watchlist.symbol == symbol
+        )
+        .first()
+    )
 
     if not item:
-        return {"message": "Stock not found in watchlist"}
+        raise HTTPException(
+            status_code=404,
+            detail="Stock not found in your watchlist"
+        )
 
     db.delete(item)
     db.commit()
-    return {"message": "Removed Successfully", "symbol": symbol}
+
+    return {
+        "message": "Removed Successfully",
+        "symbol": symbol
+    }
 
 @router.delete("/{symbol}")
 def remove_watchlist_by_symbol(
     symbol: str,
-    user_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     clean_symbol = symbol.strip().upper()
-    query = db.query(Watchlist).filter(Watchlist.symbol == clean_symbol)
-    if user_id is not None:
-        query = query.filter(Watchlist.user_id == user_id)
-    
-    item = query.first()
+
+    item = (
+        db.query(Watchlist)
+        .filter(
+            Watchlist.symbol == clean_symbol,
+            Watchlist.user_id == current_user.id
+        )
+        .first()
+    )
+
     if not item:
-        return {"message": "Stock not found in watchlist"}
+        raise HTTPException(
+            status_code=404,
+            detail="Stock not found in your watchlist"
+        )
 
     db.delete(item)
     db.commit()
-    return {"message": "Removed Successfully", "symbol": clean_symbol}
+
+    return {
+        "message": "Removed Successfully",
+        "symbol": clean_symbol
+    }

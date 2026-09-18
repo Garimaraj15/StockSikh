@@ -14,27 +14,48 @@ body {
   font-family: var(--font-inter);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #F8FAFC;
-  color: #0F172A;
+  background-color: #07090E;
+  color: #F8FAFC;
+  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, h5, h6, .font-heading {
   font-family: var(--font-outfit);
 }
 
-/* Signal AI Futuristic UI & Glassmorphism */
-.signal-glass {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(51, 65, 85, 0.7);
+/* Atmospheric Gradients & Glows */
+.bg-atmospheric {
+  background-color: #07090E;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 58, 237, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(0, 208, 156, 0.08), transparent);
 }
 
-.signal-glass-light {
-  background: rgba(255, 255, 255, 0.9);
+.glow-purple {
+  box-shadow: 0 0 50px -10px rgba(124, 58, 237, 0.25);
+}
+
+.glow-green {
+  box-shadow: 0 0 40px -10px rgba(0, 208, 156, 0.3);
+}
+
+.glow-green-sm {
+  box-shadow: 0 0 20px -5px rgba(0, 208, 156, 0.4);
+}
+
+/* Signal AI Futuristic UI & Glassmorphism */
+.signal-glass {
+  background: rgba(15, 23, 42, 0.7);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.signal-glass-card {
+  background: rgba(17, 24, 39, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .signal-neon-border {
@@ -44,17 +65,18 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 /* Modern 3D Elevated Cards */
 .groww-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 1.5rem;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .groww-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 16px 30px -4px rgba(15, 23, 42, 0.09);
-  border-color: #CBD5E1;
+  box-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 208, 156, 0.1);
+  border-color: rgba(0, 208, 156, 0.3);
 }
 
 /* AmazingUI Dribbble Trading Theme Utilities */
@@ -64,14 +86,15 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 }
 
 .amazing-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  background: rgba(17, 24, 39, 0.75);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 1.75rem;
-  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.04), 0 2px 8px 0 rgba(15, 23, 42, 0.02);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
 }
 
 .amazing-gradient-header {
-  background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%);
+  background: linear-gradient(135deg, #0B0F17 0%, #151D2C 50%, #0B0F17 100%);
 }
 
 /* Flying Mascot Continuous Flight Physics */
@@ -128,23 +151,23 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   animation: mascotBob 3s ease-in-out infinite;
 }
 
-/* Custom Scrollbar */
+/* Custom Dark Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #0B0F17;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #1E293B;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #334155;
 }
 
 .no-scrollbar::-webkit-scrollbar {

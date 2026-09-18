@@ -1,3 +1,7 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.database import engine, Base
@@ -6,7 +10,10 @@ from models.watchlist import Watchlist
 from models.wallet import UserWallet
 from models.portfolio import Holding
 from models.transaction import Transaction
-from models.community import ProQuery
+from models.snapshot import PortfolioSnapshot
+from models.learning import LearningProgress
+from models.community import ProQuery, Clan, ClanMembership, DirectMessage
+from models.notification import Notification
 
 from routes.auth import router as auth_router
 from routes.stocks import router as stocks_router
@@ -16,6 +23,14 @@ from routes.wallet import router as wallet_router
 from routes.portfolio import router as portfolio_router
 from routes.community import router as community_router
 from routes.creators import router as creators_router
+from routes.notifications import router as notifications_router
+from routes.gamification import router as gamification_router
+from routes.multi_asset import router as multi_asset_router
+
+from utils.stock_alert_service import run_price_alerts
+from utils.news_alert_service import run_news_alerts
+
+logger = logging.getLogger(__name__)
 
 # Ensure all database tables are created safely
 try:
@@ -24,10 +39,37 @@ try:
 except Exception as e:
     print(f"Warning: Could not create tables on engine: {e}")
 
+
+# ─── Lifespan: start/stop background alert monitoring ─────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context manager.
+    On startup  → creates price-alert and news-alert monitoring asyncio tasks.
+    On shutdown → cancels them cleanly.
+    """
+    price_alert_task = asyncio.create_task(run_price_alerts())
+    news_alert_task = asyncio.create_task(run_news_alerts())
+    logger.info("StockSikh price-alert and news-alert monitoring tasks started.")
+    try:
+        yield
+    finally:
+        price_alert_task.cancel()
+        news_alert_task.cancel()
+        for task in [price_alert_task, news_alert_task]:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        logger.info("StockSikh background monitoring tasks stopped cleanly.")
+
+
 app = FastAPI(
     title="StockSikh AI Platform API",
     description="Data Science & AI-powered Indian Stock Learning and Simulation Platform",
-    version="2.5.0"
+    version="2.5.0",
+    lifespan=lifespan,
 )
 
 # Robust CORS configuration
@@ -56,6 +98,9 @@ app.include_router(portfolio_router)
 app.include_router(community_router)
 app.include_router(creators_router)
 app.include_router(chatbot_router)
+app.include_router(notifications_router)
+app.include_router(gamification_router)
+app.include_router(multi_asset_router)
 
 @app.get("/")
 def home():

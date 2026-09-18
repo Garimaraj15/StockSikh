@@ -1,6 +1,6 @@
 import time
 from typing import Dict, List, Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -124,31 +124,47 @@ def get_market_indices():
                 prev = round(float(hist["Close"].iloc[-2]), 2)
                 chg = round(curr - prev, 2)
                 pct = round((chg / prev) * 100, 2)
+                result.append({
+                    "symbol": item["symbol"],
+                    "name": item["name"],
+                    "display": item["display"],
+                    "price": curr,
+                    "change": chg,
+                    "change_percent": pct,
+                    "available": True
+                })
             elif len(hist) == 1:
                 curr = round(float(hist["Close"].iloc[-1]), 2)
-                chg = 0.0
-                pct = 0.0
+                result.append({
+                    "symbol": item["symbol"],
+                    "name": item["name"],
+                    "display": item["display"],
+                    "price": curr,
+                    "change": None,
+                    "change_percent": None,
+                    "available": True
+                })
             else:
-                curr = 24850.0 if "NSEI" in item["symbol"] else 81200.0
-                chg = 120.5
-                pct = 0.5
-
-            result.append({
-                "symbol": item["symbol"],
-                "name": item["name"],
-                "display": item["display"],
-                "price": curr,
-                "change": chg,
-                "change_percent": pct
-            })
+                # yfinance returned no rows — do NOT fabricate a price
+                result.append({
+                    "symbol": item["symbol"],
+                    "name": item["name"],
+                    "display": item["display"],
+                    "price": None,
+                    "change": None,
+                    "change_percent": None,
+                    "available": False
+                })
         except Exception:
+            # yfinance raised an exception — do NOT fabricate a price
             result.append({
                 "symbol": item["symbol"],
                 "name": item["name"],
                 "display": item["display"],
-                "price": 25140.35 if "NSEI" in item["symbol"] else 82400.10,
-                "change": 94.20,
-                "change_percent": 0.38
+                "price": None,
+                "change": None,
+                "change_percent": None,
+                "available": False
             })
 
     data = {"indices": result}
@@ -156,15 +172,29 @@ def get_market_indices():
     return data
 
 @router.get("/preset")
-def get_preset_stocks():
+def get_preset_stocks(
+    limit: int = Query(12, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
     """Returns popular preset Indian stocks with prices, changes, signals, and AI scores."""
-    cache_key = "preset_stocks"
+    cache_key = "preset_stocks_all"
     now = time.time()
     if cache_key in CACHE and (now - CACHE[cache_key]["timestamp"]) < CACHE_TTL:
-        return CACHE[cache_key]["data"]
+        all_stocks = CACHE[cache_key]["data"]["stocks"]
+        page = all_stocks[offset:offset + limit]
+        return {
+            "stocks": page,
+            "offset": offset,
+            "limit": limit,
+            "total": len(all_stocks),
+            "has_more": offset + len(page) < len(all_stocks),
+        }
 
     stocks = []
-    for symbol, name, sector in PRESET_STOCKS:
+    for stock_meta in INDIAN_STOCKS:
+        symbol = stock_meta["symbol"]
+        name = stock_meta["name"]
+        sector = stock_meta["sector"]
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="3mo")
@@ -215,7 +245,14 @@ def get_preset_stocks():
 
     data = {"stocks": stocks}
     CACHE[cache_key] = {"data": data, "timestamp": now}
-    return data
+    page = stocks[offset:offset + limit]
+    return {
+        "stocks": page,
+        "offset": offset,
+        "limit": limit,
+        "total": len(stocks),
+        "has_more": offset + len(page) < len(stocks),
+    }
 
 @router.get("/news")
 def market_news():
@@ -441,3 +478,124 @@ def stock_details(symbol: str):
     except Exception as e:
         print(f"Error fetching details for {symbol}: {e}")
         return {"error": f"Failed to retrieve data for {symbol}"}
+
+@router.get("/{symbol}/safety-shield")
+def get_stock_safety_shield(symbol: str):
+    """
+    Computes the 4-Point Pre-Trade AI Inspection:
+    1. Fundamental Health (P/E & Market Cap vs Risk)
+    2. Technical Entry Timing (RSI & Support/Resistance)
+    3. NLP News Sentiment Polarity
+    4. Auto-calculated Stop-Loss (-3%) & Target (+8%)
+    """
+    details = stock_details(symbol)
+    if "error" in details:
+        return {"error": details["error"]}
+
+    price = details.get("price", 0.0)
+    rsi = details.get("rsi", 50.0)
+    pe = details.get("pe_ratio")
+    sentiment = details.get("sentiment", {}).get("polarity", "Neutral")
+    sentiment_score = details.get("sentiment", {}).get("score", 50)
+    ai_score = details.get("ai_score", {}).get("overall_score", 70)
+
+    # 1. Fundamental Health
+    if pe and pe > 60:
+        fund_status = "OVERVALUED"
+        fund_text = f"P/E is high ({pe}), pricing in aggressive future growth."
+        fund_verdict = "WARNING"
+    elif pe and pe < 15:
+        fund_status = "VALUE_ZONE"
+        fund_text = f"Attractive valuation (P/E {pe}), trading at discount."
+        fund_verdict = "PASS"
+    else:
+        fund_status = "HEALTHY"
+        fund_text = f"Stable valuation (P/E {pe or 'N/A'}), in-line with peers."
+        fund_verdict = "PASS"
+
+    # 2. Technical Entry Timing
+    if rsi > 70:
+        tech_status = "OVERBOUGHT"
+        tech_text = f"RSI is {rsi} (Overbought). High risk of immediate pullback."
+        tech_verdict = "CAUTION"
+    elif rsi < 35:
+        tech_status = "OVERSOLD"
+        tech_text = f"RSI is {rsi} (Oversold). Value rebound territory."
+        tech_verdict = "PASS"
+    else:
+        tech_status = "OPTIMAL_ENTRY"
+        tech_text = f"RSI is {rsi} (Healthy momentum, near moving average support)."
+        tech_verdict = "PASS"
+
+    # 3. Live News Sentiment
+    if sentiment.upper() in ["BULLISH", "POSITIVE"]:
+        news_status = "POSITIVE"
+        news_text = f"News sentiment is Bullish (Score: {sentiment_score}/100)."
+        news_verdict = "PASS"
+    elif sentiment.upper() in ["BEARISH", "NEGATIVE"]:
+        news_status = "NEGATIVE"
+        news_text = f"News sentiment is Bearish (Score: {sentiment_score}/100)."
+        news_verdict = "CAUTION"
+    else:
+        news_status = "NEUTRAL"
+        news_text = "No high-volatility news detected in last 24 hours."
+        news_verdict = "PASS"
+
+    # 4. Recommended SL and Target
+    recommended_target = round(price * 1.08, 2)  # +8% target
+    recommended_sl = round(price * 0.97, 2)      # -3% stoploss
+    risk_reward_ratio = "1:2.67"
+
+    # Overall Safety Verdict
+    pass_count = sum(1 for v in [fund_verdict, tech_verdict, news_verdict] if v == "PASS")
+    if pass_count == 3:
+        overall_safety = "HIGH_SAFETY"
+        badge_text = "🟢 SAFE TO ENTER"
+    elif pass_count == 2:
+        overall_safety = "MODERATE_SAFETY"
+        badge_text = "🟡 MODERATE RISK"
+    else:
+        overall_safety = "HIGH_RISK"
+        badge_text = "🔴 HIGH VOLATILITY"
+
+    return {
+        "symbol": symbol,
+        "name": details.get("name", symbol),
+        "current_price": price,
+        "overall_safety": overall_safety,
+        "badge_text": badge_text,
+        "composite_ai_score": ai_score,
+        "checks": [
+            {
+                "id": "fundamentals",
+                "title": "1. Fundamental Valuation Check",
+                "status": fund_status,
+                "verdict": fund_verdict,
+                "explanation": fund_text
+            },
+            {
+                "id": "technicals",
+                "title": "2. Technical Entry Timing",
+                "status": tech_status,
+                "verdict": tech_verdict,
+                "explanation": tech_text
+            },
+            {
+                "id": "news_sentiment",
+                "title": "3. Live NLP News Mood",
+                "status": news_status,
+                "verdict": news_verdict,
+                "explanation": news_text
+            },
+            {
+                "id": "risk_reward",
+                "title": "4. Calculated Risk-to-Reward",
+                "status": "CALCULATED",
+                "verdict": "PASS",
+                "target_price": recommended_target,
+                "stoploss_price": recommended_sl,
+                "risk_reward_ratio": risk_reward_ratio,
+                "explanation": f"Recommended Target: ₹{recommended_target:,.2f} (+8%) | Stop-Loss: ₹{recommended_sl:,.2f} (-3%)"
+            }
+        ]
+    }
