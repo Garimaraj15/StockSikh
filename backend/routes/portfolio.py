@@ -513,6 +513,7 @@ def sell_stock(
     }
 
 @router.get("/holdings")
+@router.get("/holdings/")
 def get_user_holdings(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -557,6 +558,7 @@ def get_user_holdings(
     return {"holdings": results}
 
 @router.get("/summary")
+@router.get("/summary/")
 def get_portfolio_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)

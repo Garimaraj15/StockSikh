@@ -37,6 +37,7 @@ class TestEmailRequest(BaseModel):
     price: float = 980.50
 
 
+@router.get("", response_model=NotificationListResponse)
 @router.get("/", response_model=NotificationListResponse)
 def get_user_notifications(
     current_user: User = Depends(get_current_user),

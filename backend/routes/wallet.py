@@ -130,6 +130,7 @@ def get_or_create_wallet(user_id: int, db: Session) -> UserWallet:
     return wallet
 
 @router.get("/balance")
+@router.get("/balance/")
 def get_wallet_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)

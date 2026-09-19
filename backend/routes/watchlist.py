@@ -25,6 +25,7 @@ class CreateAlertRequest(BaseModel):
 def test():
     return {"message": "Watchlist API Working"}
 
+@router.get("")
 @router.get("/")
 def get_watchlist(
     current_user: User = Depends(get_current_user),
@@ -48,6 +49,7 @@ def get_watchlist(
     }
 
 @router.get("/all")
+@router.get("/all/")
 def get_all_watchlist(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -68,6 +70,7 @@ def get_all_watchlist(
     ]
 
 @router.get("/details")
+@router.get("/details/")
 def get_watchlist_details(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
