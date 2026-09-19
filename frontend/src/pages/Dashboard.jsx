@@ -37,34 +37,37 @@ export default function Dashboard() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+
+    // Load stocks + news independently of watchlist
     try {
-      const requests = [
+      const [presetsRes, newsRes] = await Promise.all([
         axios.get(`${API}/stocks/preset`, { params: { limit: 12, offset: 0 } }),
         axios.get(`${API}/stocks/news`)
-      ];
-
-      const token = localStorage.getItem("token");
-      if (token) {
-        requests.push(axios.get(`${API}/watchlist/details`, authConfig()));
-      }
-
-      const results = await Promise.all(requests);
-      setPresets(results[0].data?.stocks || []);
-      setHasMoreStocks(Boolean(results[0].data?.has_more));
+      ]);
+      setPresets(presetsRes.data?.stocks || []);
+      setHasMoreStocks(Boolean(presetsRes.data?.has_more));
       setStockLoadError("");
-      setNews(results[1].data?.news || []);
+      setNews(newsRes.data?.news || []);
+    } catch (e) {
+      console.error("Error loading stocks/news:", e);
+      setStockLoadError("Unable to load stocks right now. Please try again.");
+    }
 
-      if (token && results[2]) {
-        setWatchlist(results[2].data || []);
-      } else {
+    // Load watchlist separately — failure here must NOT block stocks display
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const wRes = await axios.get(`${API}/watchlist/details`, authConfig());
+        setWatchlist(wRes.data || []);
+      } catch (e) {
+        console.error("Watchlist load failed (non-fatal):", e);
         setWatchlist([]);
       }
-    } catch (e) {
-      console.error("Error loading dashboard data:", e);
-      setStockLoadError("Unable to load more stocks right now. Please try again.");
-    } finally {
-      setLoading(false);
+    } else {
+      setWatchlist([]);
     }
+
+    setLoading(false);
   }, [authConfig]);
 
   const loadMoreStocks = async () => {

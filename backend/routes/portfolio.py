@@ -654,6 +654,7 @@ def get_portfolio_summary(
 
 
 @router.get("/history")
+@router.get("/history/")
 def get_portfolio_history(
     symbol: Optional[str] = None,
     current_user: User = Depends(get_current_user),
@@ -705,6 +706,7 @@ def get_portfolio_history(
     }
 
 @router.get("/transactions")
+@router.get("/transactions/")
 def get_user_transactions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
