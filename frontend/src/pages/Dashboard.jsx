@@ -195,7 +195,7 @@ export default function Dashboard() {
                     <BrainCircuit className="w-4 h-4 text-[#A78BFA]" /> NLP Sentiment Scorer
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-[#00D09C]" /> ₹10,00,000 Paper Trading
+                    <ShieldCheck className="w-4 h-4 text-[#00D09C]" /> ₹10,000 Virtual Capital
                   </span>
                 </div>
               </div>
@@ -203,11 +203,11 @@ export default function Dashboard() {
               {/* Quick Action */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
                 <Link
-                  to="/portfolio"
+                  to={user ? "/portfolio" : "/signup"}
                   className="px-6 py-4 rounded-2xl bg-[#00D09C] hover:bg-[#00B386] text-[#07090E] font-extrabold text-sm shadow-[0_0_30px_rgba(0,208,156,0.35)] transition-all flex items-center justify-center gap-2 hover:scale-105 cursor-pointer"
                 >
                   <Wallet className="w-4 h-4" />
-                  <span>Open Virtual Portfolio</span>
+                  <span>{user ? "Open Virtual Portfolio" : "Get Started — Free ₹10,000"}</span>
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
@@ -220,61 +220,63 @@ export default function Dashboard() {
           <StockSearch size="lg" placeholder="Search any Indian stock (e.g. Reliance, TCS, INFY, HDFC Bank)..." />
         </AnimatedSection>
 
-        {/* ── User Watchlist ───────────────────────────────────────── */}
-        <AnimatedSection delay={0.1} className="space-y-4" data-testid="watchlist-section">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#111827] border border-white/[0.08] flex items-center justify-center text-white shadow-xs">
-                <Bookmark className="w-5 h-5 text-[#00D09C]" />
-              </div>
-              <div>
-                <h2 className="font-heading font-black text-xl sm:text-2xl text-white">
-                  My Watchlist
-                </h2>
-                <div className="text-xs text-[#94A3B8] font-medium">
-                  {watchlist.length === 0 ? "No stocks pinned yet" : `${watchlist.length} stocks tracked with real-time indicators`}
+        {/* ── User Watchlist (Rendered for logged-in users) ─────────── */}
+        {user && (
+          <AnimatedSection delay={0.1} className="space-y-4" data-testid="watchlist-section">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#111827] border border-white/[0.08] flex items-center justify-center text-white shadow-xs">
+                  <Bookmark className="w-5 h-5 text-[#00D09C]" />
+                </div>
+                <div>
+                  <h2 className="font-heading font-black text-xl sm:text-2xl text-white">
+                    My Watchlist
+                  </h2>
+                  <div className="text-xs text-[#94A3B8] font-medium">
+                    {watchlist.length === 0 ? "No stocks pinned yet" : `${watchlist.length} stocks tracked with real-time indicators`}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-36 bg-[#111827]/60 border border-white/[0.06] rounded-2xl animate-pulse" />
-              ))}
-            </div>
-          ) : watchlist.length === 0 ? (
-            <div className="bg-[#111827]/50 border border-dashed border-white/[0.1] rounded-3xl p-8 sm:p-12 text-center backdrop-blur-xl">
-              <div className="w-12 h-12 rounded-2xl bg-[#00D09C]/10 border border-[#00D09C]/20 text-[#00D09C] flex items-center justify-center mx-auto mb-3">
-                <Plus className="w-6 h-6" />
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-36 bg-[#111827]/60 border border-white/[0.06] rounded-2xl animate-pulse" />
+                ))}
               </div>
-              <h3 className="font-heading font-bold text-lg text-white">Your watchlist is empty</h3>
-              <p className="text-sm text-[#94A3B8] max-w-md mx-auto mt-1">
-                Search any company above or pick from popular Indian stocks below to monitor their daily signals.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {watchlist.map((s, i) => (
-                <div key={s.symbol} className="relative group">
-                  <button
-                    data-testid={`watchlist-remove-${s.symbol}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      removeFromWatchlist(s.symbol);
-                    }}
-                    className="absolute top-3 right-3 z-20 w-7 h-7 rounded-full bg-[#111827]/90 border border-white/[0.1] shadow-md flex items-center justify-center text-[#94A3B8] hover:text-[#EF4444] hover:border-[#EF4444]/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    title="Remove from watchlist"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                  <StockCard stock={s} index={i} />
+            ) : watchlist.length === 0 ? (
+              <div className="bg-[#111827]/50 border border-dashed border-white/[0.1] rounded-3xl p-8 sm:p-12 text-center backdrop-blur-xl">
+                <div className="w-12 h-12 rounded-2xl bg-[#00D09C]/10 border border-[#00D09C]/20 text-[#00D09C] flex items-center justify-center mx-auto mb-3">
+                  <Plus className="w-6 h-6" />
                 </div>
-              ))}
-            </div>
-          )}
-        </AnimatedSection>
+                <h3 className="font-heading font-bold text-lg text-white">Your watchlist is empty</h3>
+                <p className="text-sm text-[#94A3B8] max-w-md mx-auto mt-1">
+                  Search any company above or pick from popular Indian stocks below to monitor their daily signals.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {watchlist.map((s, i) => (
+                  <div key={s.symbol} className="relative group">
+                    <button
+                      data-testid={`watchlist-remove-${s.symbol}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        removeFromWatchlist(s.symbol);
+                      }}
+                      className="absolute top-3 right-3 z-20 w-7 h-7 rounded-full bg-[#111827]/90 border border-white/[0.1] shadow-md flex items-center justify-center text-[#94A3B8] hover:text-[#EF4444] hover:border-[#EF4444]/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      title="Remove from watchlist"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    <StockCard stock={s} index={i} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </AnimatedSection>
+        )}
 
         {/* ── Explore Indian Market (Tabs) ─────────────────────────── */}
         <section className="space-y-5">

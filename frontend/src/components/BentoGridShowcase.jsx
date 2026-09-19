@@ -232,7 +232,7 @@ export default function BentoGridShowcase() {
           </Link>
         </AnimatedSection>
 
-        {/* Card 5: Clans & Pro League Alpha */}
+        {/* Card 5: Pro Learners & Community Alpha */}
         <AnimatedSection delay={0.25} className="group relative rounded-3xl p-6 bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.08] hover:border-[#EC4899]/40 backdrop-blur-xl transition-all duration-300 shadow-[0_0_20px_rgba(0,0,0,0.4)] flex flex-col justify-between overflow-hidden">
           <div className="absolute top-0 right-0 w-44 h-44 bg-[#EC4899]/10 rounded-full blur-2xl group-hover:bg-[#EC4899]/20 transition-all pointer-events-none" />
           <div className="space-y-4 relative z-10">
@@ -241,32 +241,32 @@ export default function BentoGridShowcase() {
                 <Users className="w-6 h-6" />
               </div>
               <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-[#EC4899]/10 text-[#EC4899] border border-[#EC4899]/20">
-                P2P LEADERBOARDS
+                VERIFIED PROS
               </span>
             </div>
 
             <div>
               <h3 className="font-heading font-black text-xl text-white group-hover:text-[#EC4899] transition-colors">
-                Trading Clans & Pro Alpha
+                Pro Learners & Community
               </h3>
               <p className="text-xs text-[#94A3B8] mt-1.5 leading-relaxed">
-                Join competitive trading leagues, track top verified trader win rates, and ask queries in real-time community rooms.
+                Learn from verified high win-rate traders, ask market questions in the community forum, and level up your strategy.
               </p>
             </div>
 
-            {/* Micro Clan Leaderboard */}
+            {/* Micro Pro Learner Leaderboard */}
             <div className="p-3 rounded-2xl bg-[#07090E]/80 border border-white/[0.06] space-y-1.5 text-[11px]">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-white flex items-center gap-1.5">
-                  Valhalla Bulls
+                  ⭐ Arjun K. (Pro Learner)
                 </span>
-                <span className="text-[#EC4899] font-mono font-bold">+28.4% PnL</span>
+                <span className="text-[#00D09C] font-mono font-bold">78.4% Win Rate</span>
               </div>
               <div className="flex items-center justify-between text-[#94A3B8]">
                 <span className="font-bold text-slate-300 flex items-center gap-1.5">
-                  Quantum Alphas
+                  ⭐ Priya M. (Top Trader)
                 </span>
-                <span className="text-emerald-400 font-mono font-bold">+22.1% PnL</span>
+                <span className="text-[#00D09C] font-mono font-bold">82.1% Win Rate</span>
               </div>
             </div>
           </div>
@@ -275,7 +275,7 @@ export default function BentoGridShowcase() {
             to="/community"
             className="mt-5 inline-flex items-center gap-1.5 text-xs font-bold text-[#EC4899] hover:text-[#F472B6] transition-colors group-hover:translate-x-1 transform duration-200"
           >
-            Explore Trading Clans <ArrowRight className="w-3.5 h-3.5" />
+            Explore Community & Pros <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </AnimatedSection>
 
@@ -294,18 +294,18 @@ export default function BentoGridShowcase() {
 
             <div>
               <h3 className="font-heading font-black text-xl text-white group-hover:text-[#00D09C] transition-colors">
-                ₹10,00,000 Paper Capital
+                ₹10,000 Virtual Capital
               </h3>
               <p className="text-xs text-[#94A3B8] mt-1.5 leading-relaxed">
-                Test bold swing setups and intraday strategies with simulated virtual currency. Zero real money loss, maximum skill gain.
+                Get ₹10,000 instant virtual starting balance on signup. Practice intraday & swing trades with live market feeds with zero risk.
               </p>
             </div>
 
             {/* Micro Wallet Ledger */}
             <div className="p-3.5 rounded-2xl bg-[#07090E]/80 border border-white/[0.06] flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-bold text-[#94A3B8]">SIMULATED BALANCE</div>
-                <div className="font-heading font-black text-lg text-[#00D09C]">₹10,00,000.00</div>
+                <div className="text-[11px] font-bold text-[#94A3B8]">STARTING VIRTUAL WALLET</div>
+                <div className="font-heading font-black text-lg text-[#00D09C]">₹10,000.00</div>
               </div>
               <div className="p-2 rounded-xl bg-[#00D09C]/10 text-[#00D09C] border border-[#00D09C]/20">
                 <Lock className="w-4 h-4" />
@@ -317,7 +317,7 @@ export default function BentoGridShowcase() {
             to="/portfolio"
             className="mt-5 inline-flex items-center gap-1.5 text-xs font-bold text-[#00D09C] hover:text-[#00B386] transition-colors group-hover:translate-x-1 transform duration-200"
           >
-            Start Virtual Trading <ArrowRight className="w-3.5 h-3.5" />
+            Start Paper Trading <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </AnimatedSection>
 
