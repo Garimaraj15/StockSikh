@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,8 +18,7 @@ from routes.wallet import (
     claim_task_reward,
     get_wallet_balance,
 )
-from learning_curriculum import get_daily_lesson
-from routes.stocks import INDIAN_STOCKS
+from routes.stocks import INDIAN_STOCKS, clean_float
 
 router = APIRouter(prefix="/gamification", tags=["Gamification"])
 
@@ -34,10 +34,12 @@ def get_market_context():
     for key, symbol, label in (("nifty", "^NSEI", "NIFTY 50"), ("stock", "RELIANCE.NS", "Reliance Industries")):
         try:
             history = yf.Ticker(symbol).history(period="2d")
-            if not history.empty:
-                current = round(float(history["Close"].iloc[-1]), 2)
-                previous = round(float(history["Close"].iloc[-2]), 2) if len(history) > 1 else None
-                context[key] = {"label": label, "current": current, "previous": previous}
+            if not history.empty and "Close" in history:
+                closes = [float(v) for v in history["Close"].dropna() if math.isfinite(float(v))]
+                if closes:
+                    current = clean_float(closes[-1])
+                    previous = clean_float(closes[-2]) if len(closes) > 1 else None
+                    context[key] = {"label": label, "current": current, "previous": previous}
         except Exception:
             continue
     return context

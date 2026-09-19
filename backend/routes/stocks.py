@@ -1,3 +1,4 @@
+import math
 import time
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Query
@@ -16,6 +17,18 @@ router = APIRouter(
 # In-memory cache to prevent Yahoo Finance throttling
 CACHE: Dict[str, dict] = {}
 CACHE_TTL = 60  # seconds
+
+def clean_float(val, default=0.0):
+    """Safely converts any numeric / numpy / pandas value into a clean, finite Python float or default."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return round(f, 2)
+    except (ValueError, TypeError):
+        return default
 
 PRESET_STOCKS = [
     ("RELIANCE.NS", "Reliance Industries", "Energy / Conglomerate"),
@@ -63,14 +76,22 @@ INDIAN_STOCKS = [
 
 def calculate_technical_signals(df: pd.DataFrame):
     """Computes current price, MA20, MA50, RSI, and BUY/SELL/HOLD signal."""
-    if df.empty or len(df) < 5:
-        return 0, 0, 0, 50.0, "HOLD"
+    if df.empty or len(df) < 5 or "Close" not in df:
+        return 0.0, 0.0, 0.0, 50.0, "HOLD"
 
-    closes = df["Close"]
-    current_price = round(float(closes.iloc[-1]), 2)
+    closes = df["Close"].dropna()
+    valid_closes = [float(v) for v in closes if math.isfinite(float(v))]
+    if not valid_closes:
+        return 0.0, 0.0, 0.0, 50.0, "HOLD"
 
-    ma20 = round(float(closes.rolling(20, min_periods=5).mean().iloc[-1]), 2)
-    ma50 = round(float(closes.rolling(50, min_periods=10).mean().iloc[-1]), 2)
+    current_price = clean_float(valid_closes[-1], 0.0)
+    if current_price <= 0.0:
+        return 0.0, 0.0, 0.0, 50.0, "HOLD"
+
+    ma20_val = closes.rolling(20, min_periods=5).mean().iloc[-1]
+    ma50_val = closes.rolling(50, min_periods=10).mean().iloc[-1]
+    ma20 = clean_float(ma20_val, current_price)
+    ma50 = clean_float(ma50_val, current_price)
 
     # RSI (14 periods)
     delta = closes.diff()
@@ -84,11 +105,10 @@ def calculate_technical_signals(df: pd.DataFrame):
         rs = avg_gain / avg_loss
         rsi_series = 100 - (100 / (1 + rs))
 
-    rsi_val = rsi_series.iloc[-1]
-    if pd.isna(rsi_val):
-        rsi = 50.0
+    if not rsi_series.empty and pd.notna(rsi_series.iloc[-1]):
+        rsi = clean_float(rsi_series.iloc[-1], 50.0)
     else:
-        rsi = round(float(rsi_val), 2)
+        rsi = 50.0
 
     # Educational rule-based signal
     if current_price > ma20 and rsi < 68:
@@ -119,11 +139,12 @@ def get_market_indices():
         try:
             t = yf.Ticker(item["symbol"])
             hist = t.history(period="2d")
-            if len(hist) >= 2:
-                curr = round(float(hist["Close"].iloc[-1]), 2)
-                prev = round(float(hist["Close"].iloc[-2]), 2)
-                chg = round(curr - prev, 2)
-                pct = round((chg / prev) * 100, 2)
+            closes = [float(v) for v in hist["Close"].dropna() if math.isfinite(float(v))] if "Close" in hist else []
+            if len(closes) >= 2:
+                curr = clean_float(closes[-1])
+                prev = clean_float(closes[-2])
+                chg = clean_float(curr - prev)
+                pct = clean_float((chg / prev) * 100) if prev > 0 else 0.0
                 result.append({
                     "symbol": item["symbol"],
                     "name": item["name"],
@@ -133,8 +154,8 @@ def get_market_indices():
                     "change_percent": pct,
                     "available": True
                 })
-            elif len(hist) == 1:
-                curr = round(float(hist["Close"].iloc[-1]), 2)
+            elif len(closes) == 1:
+                curr = clean_float(closes[-1])
                 result.append({
                     "symbol": item["symbol"],
                     "name": item["name"],
@@ -145,7 +166,6 @@ def get_market_indices():
                     "available": True
                 })
             else:
-                # yfinance returned no rows — do NOT fabricate a price
                 result.append({
                     "symbol": item["symbol"],
                     "name": item["name"],
@@ -156,7 +176,6 @@ def get_market_indices():
                     "available": False
                 })
         except Exception:
-            # yfinance raised an exception — do NOT fabricate a price
             result.append({
                 "symbol": item["symbol"],
                 "name": item["name"],
@@ -198,13 +217,22 @@ def get_preset_stocks(
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="3mo")
-            if hist.empty or len(hist) < 2:
+            if hist.empty or len(hist) < 2 or "Close" not in hist:
                 continue
 
             curr_price, ma20, ma50, rsi, signal = calculate_technical_signals(hist)
-            prev_price = round(float(hist["Close"].iloc[-2]), 2)
-            change = round(curr_price - prev_price, 2)
-            change_percent = round((change / prev_price) * 100, 2) if prev_price > 0 else 0.0
+
+            if curr_price <= 0.0 or not math.isfinite(curr_price):
+                continue
+
+            closes = [float(v) for v in hist["Close"].dropna() if math.isfinite(float(v))]
+            if len(closes) >= 2:
+                prev_price = clean_float(closes[-2], curr_price)
+            else:
+                prev_price = curr_price
+
+            change = clean_float(curr_price - prev_price, 0.0)
+            change_percent = clean_float((change / prev_price) * 100, 0.0) if prev_price > 0 else 0.0
 
             # Quick AI Score calculation
             ai_score_data = compute_composite_ai_score(
@@ -226,8 +254,8 @@ def get_preset_stocks(
                 "ma50": ma50,
                 "rsi": rsi,
                 "signal": signal,
-                "ai_score": ai_score_data["composite_score"],
-                "ai_recommendation": ai_score_data["recommendation"]
+                "ai_score": int(ai_score_data.get("composite_score", 70)),
+                "ai_recommendation": str(ai_score_data.get("recommendation", "Neutral Hold"))
             })
         except Exception as e:
             print(f"Error fetching preset stock {symbol}: {e}")
@@ -345,21 +373,34 @@ def stock_chart(symbol: str, period: str = "6mo"):
             df = ticker.history(period="6mo", interval="1d")
 
         chart_points = []
-        ma20_series = df["Close"].rolling(20, min_periods=1).mean()
-        ma50_series = df["Close"].rolling(50, min_periods=1).mean()
+        if not df.empty and "Close" in df:
+            closes = df["Close"].dropna()
+            ma20_series = df["Close"].rolling(20, min_periods=1).mean()
+            ma50_series = df["Close"].rolling(50, min_periods=1).mean()
 
-        for idx, row in df.iterrows():
-            date_str = str(idx.strftime("%H:%M" if valid_period == "1d" else "%b %d, %Y"))
-            chart_points.append({
-                "date": date_str,
-                "close": round(float(row["Close"]), 2),
-                "open": round(float(row["Open"]), 2) if "Open" in row else None,
-                "high": round(float(row["High"]), 2) if "High" in row else None,
-                "low": round(float(row["Low"]), 2) if "Low" in row else None,
-                "volume": int(row["Volume"]) if "Volume" in row and pd.notna(row["Volume"]) else 0,
-                "ma20": round(float(ma20_series.loc[idx]), 2) if pd.notna(ma20_series.loc[idx]) else None,
-                "ma50": round(float(ma50_series.loc[idx]), 2) if pd.notna(ma50_series.loc[idx]) else None,
-            })
+            for idx, row in df.iterrows():
+                close_val = clean_float(row.get("Close"), None)
+                if close_val is None:
+                    continue
+                date_str = str(idx.strftime("%H:%M" if valid_period == "1d" else "%b %d, %Y"))
+                open_val = clean_float(row.get("Open"), None) if "Open" in row else None
+                high_val = clean_float(row.get("High"), None) if "High" in row else None
+                low_val = clean_float(row.get("Low"), None) if "Low" in row else None
+                vol_raw = row.get("Volume")
+                vol_val = int(vol_raw) if vol_raw is not None and pd.notna(vol_raw) and math.isfinite(float(vol_raw)) else 0
+                m20_val = clean_float(ma20_series.loc[idx], None) if idx in ma20_series.index and pd.notna(ma20_series.loc[idx]) else None
+                m50_val = clean_float(ma50_series.loc[idx], None) if idx in ma50_series.index and pd.notna(ma50_series.loc[idx]) else None
+
+                chart_points.append({
+                    "date": date_str,
+                    "close": close_val,
+                    "open": open_val,
+                    "high": high_val,
+                    "low": low_val,
+                    "volume": vol_val,
+                    "ma20": m20_val,
+                    "ma50": m50_val,
+                })
 
         return {"chart": chart_points}
     except Exception as e:
@@ -374,27 +415,31 @@ def stock_details(symbol: str):
         if df.empty:
             df = ticker.history(period="3mo")
 
-        if df.empty:
+        if df.empty or "Close" not in df:
             return {"error": f"Stock '{symbol}' not found"}
 
         current_price, ma20, ma50, rsi, signal = calculate_technical_signals(df)
 
-        # Day change calculation
-        if len(df) >= 2:
-            prev_price = round(float(df["Close"].iloc[-2]), 2)
-            change = round(current_price - prev_price, 2)
-            change_percent = round((change / prev_price) * 100, 2)
+        closes = [float(v) for v in df["Close"].dropna() if math.isfinite(float(v))]
+        if len(closes) >= 2:
+            prev_price = clean_float(closes[-2], current_price)
+            change = clean_float(current_price - prev_price, 0.0)
+            change_percent = clean_float((change / prev_price) * 100, 0.0) if prev_price > 0 else 0.0
         else:
             prev_price = current_price
             change = 0.0
             change_percent = 0.0
 
         # High/Low ranges
-        day_low = round(float(df["Low"].iloc[-1]), 2)
-        day_high = round(float(df["High"].iloc[-1]), 2)
-        fifty_two_low = round(float(df["Low"].min()), 2)
-        fifty_two_high = round(float(df["High"].max()), 2)
-        latest_volume = int(df["Volume"].iloc[-1]) if "Volume" in df and pd.notna(df["Volume"].iloc[-1]) else 0
+        lows = [float(v) for v in df["Low"].dropna() if math.isfinite(float(v))] if "Low" in df else closes
+        highs = [float(v) for v in df["High"].dropna() if math.isfinite(float(v))] if "High" in df else closes
+        day_low = clean_float(lows[-1], current_price) if lows else current_price
+        day_high = clean_float(highs[-1], current_price) if highs else current_price
+        fifty_two_low = clean_float(min(lows), current_price) if lows else current_price
+        fifty_two_high = clean_float(max(highs), current_price) if highs else current_price
+
+        vol_series = df["Volume"].dropna() if "Volume" in df else []
+        latest_volume = int(vol_series.iloc[-1]) if len(vol_series) > 0 and math.isfinite(float(vol_series.iloc[-1])) else 0
 
         # Fetch company metadata & news for NLP sentiment
         info = {}
@@ -413,10 +458,14 @@ def stock_details(symbol: str):
         company_name = info.get("longName") or info.get("shortName") or symbol.replace(".NS", "").replace(".BO", "")
         sector = info.get("sector") or "Indian Equities"
         industry = info.get("industry") or "Diversified"
-        market_cap = info.get("marketCap")
-        pe_ratio = info.get("trailingPE")
-        pb_ratio = info.get("priceToBook")
-        dividend_yield = info.get("dividendYield")
+        market_cap_raw = info.get("marketCap")
+        market_cap = clean_float(market_cap_raw, None) if market_cap_raw and math.isfinite(float(market_cap_raw)) else None
+        pe_ratio_raw = info.get("trailingPE")
+        pe_ratio = clean_float(pe_ratio_raw, None) if pe_ratio_raw and math.isfinite(float(pe_ratio_raw)) else None
+        pb_ratio_raw = info.get("priceToBook")
+        pb_ratio = clean_float(pb_ratio_raw, None) if pb_ratio_raw and math.isfinite(float(pb_ratio_raw)) else None
+        dividend_yield_raw = info.get("dividendYield")
+        dividend_yield = clean_float(dividend_yield_raw * 100, None) if dividend_yield_raw and math.isfinite(float(dividend_yield_raw)) else None
         summary = info.get("longBusinessSummary") or f"{company_name} is one of India's prominent publicly traded enterprises listed on the National Stock Exchange (NSE)."
 
         # Run Data Science NLP Sentiment Analysis on news
@@ -439,11 +488,16 @@ def stock_details(symbol: str):
         ma50_s = df["Close"].rolling(50, min_periods=1).mean()
 
         for idx, row in df.iterrows():
+            c_val = clean_float(row.get("Close"), None)
+            if c_val is None:
+                continue
+            m20_p = clean_float(ma20_s.loc[idx], None) if idx in ma20_s.index and pd.notna(ma20_s.loc[idx]) else None
+            m50_p = clean_float(ma50_s.loc[idx], None) if idx in ma50_s.index and pd.notna(ma50_s.loc[idx]) else None
             chart_points.append({
                 "date": str(idx.date()),
-                "close": round(float(row["Close"]), 2),
-                "ma20": round(float(ma20_s.loc[idx]), 2) if pd.notna(ma20_s.loc[idx]) else None,
-                "ma50": round(float(ma50_s.loc[idx]), 2) if pd.notna(ma50_s.loc[idx]) else None,
+                "close": c_val,
+                "ma20": m20_p,
+                "ma50": m50_p,
             })
 
         return {
@@ -462,9 +516,9 @@ def stock_details(symbol: str):
             "fifty_two_week_high": fifty_two_high,
             "volume": latest_volume,
             "market_cap": market_cap,
-            "pe_ratio": round(float(pe_ratio), 2) if pe_ratio else None,
-            "pb_ratio": round(float(pb_ratio), 2) if pb_ratio else None,
-            "dividend_yield": round(float(dividend_yield * 100), 2) if dividend_yield else None,
+            "pe_ratio": pe_ratio,
+            "pb_ratio": pb_ratio,
+            "dividend_yield": dividend_yield,
             "summary": summary,
             "ma20": ma20,
             "ma50": ma50,
