@@ -73,7 +73,7 @@ def get_user_notifications(
             action_url=n.action_url,
             related_entity_type=n.related_entity_type,
             related_entity_id=n.related_entity_id,
-            created_at=n.created_at.isoformat() if n.created_at else None
+            created_at=(n.created_at.isoformat() + "Z") if n.created_at else None
         )
         for n in notifs
     ]
@@ -82,6 +82,68 @@ def get_user_notifications(
         notifications=items,
         unread_count=unread_count
     )
+
+
+@router.delete("/clear-all")
+@router.delete("/clear-all/")
+@router.post("/clear-all")
+@router.post("/clear-all/")
+def clear_all_notifications(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently removes all notifications for the authenticated user.
+    """
+    deleted_count = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "All notifications cleared.",
+        "deleted_count": deleted_count
+    }
+
+
+@router.delete("/{notif_id}")
+@router.delete("/{notif_id}/")
+@router.post("/{notif_id}/delete")
+@router.post("/{notif_id}/delete/")
+def delete_single_notification(
+    notif_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently deletes a single notification belonging to the current user.
+    """
+    notif = (
+        db.query(Notification)
+        .filter(
+            Notification.id == notif_id,
+            Notification.user_id == current_user.id
+        )
+        .first()
+    )
+
+    if not notif:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification not found or access denied."
+        )
+
+    db.delete(notif)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Notification deleted successfully.",
+        "id": notif_id
+    }
 
 
 @router.post("/{notif_id}/read")
@@ -142,68 +204,6 @@ def mark_all_read(
         "success": True,
         "message": "All notifications marked as read.",
         "marked_count": updated_count
-    }
-
-
-@router.delete("/{notif_id}")
-@router.delete("/{notif_id}/")
-@router.post("/{notif_id}/delete")
-@router.post("/{notif_id}/delete/")
-def delete_single_notification(
-    notif_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Permanently deletes a single notification belonging to the current user.
-    """
-    notif = (
-        db.query(Notification)
-        .filter(
-            Notification.id == notif_id,
-            Notification.user_id == current_user.id
-        )
-        .first()
-    )
-
-    if not notif:
-        raise HTTPException(
-            status_code=404,
-            detail="Notification not found or access denied."
-        )
-
-    db.delete(notif)
-    db.commit()
-
-    return {
-        "success": True,
-        "message": "Notification deleted successfully.",
-        "id": notif_id
-    }
-
-
-@router.delete("/clear-all")
-@router.delete("/clear-all/")
-@router.post("/clear-all")
-@router.post("/clear-all/")
-def clear_all_notifications(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Permanently removes all notifications for the authenticated user.
-    """
-    deleted_count = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id)
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-
-    return {
-        "success": True,
-        "message": "All notifications cleared.",
-        "deleted_count": deleted_count
     }
 
 
