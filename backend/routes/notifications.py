@@ -145,6 +145,68 @@ def mark_all_read(
     }
 
 
+@router.delete("/{notif_id}")
+@router.delete("/{notif_id}/")
+@router.post("/{notif_id}/delete")
+@router.post("/{notif_id}/delete/")
+def delete_single_notification(
+    notif_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently deletes a single notification belonging to the current user.
+    """
+    notif = (
+        db.query(Notification)
+        .filter(
+            Notification.id == notif_id,
+            Notification.user_id == current_user.id
+        )
+        .first()
+    )
+
+    if not notif:
+        raise HTTPException(
+            status_code=404,
+            detail="Notification not found or access denied."
+        )
+
+    db.delete(notif)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Notification deleted successfully.",
+        "id": notif_id
+    }
+
+
+@router.delete("/clear-all")
+@router.delete("/clear-all/")
+@router.post("/clear-all")
+@router.post("/clear-all/")
+def clear_all_notifications(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently removes all notifications for the authenticated user.
+    """
+    deleted_count = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "All notifications cleared.",
+        "deleted_count": deleted_count
+    }
+
+
 @router.post("/test-email")
 def send_test_email(req: TestEmailRequest, current_user: User = Depends(get_current_user)):
     html_content = get_trade_email_template(
@@ -157,3 +219,4 @@ def send_test_email(req: TestEmailRequest, current_user: User = Depends(get_curr
     )
     sent = send_email_alert(req.recipient_email, f"Paper Trade Executed: {req.symbol}", html_content)
     return {"status": "success" if sent else "failed", "dispatched": sent}
+

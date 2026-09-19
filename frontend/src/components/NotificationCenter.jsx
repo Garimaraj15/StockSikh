@@ -11,7 +11,9 @@ import {
   Newspaper,
   ExternalLink,
   MessageSquare,
-  Clock
+  Clock,
+  Trash2,
+  X
 } from "lucide-react";
 
 export default function NotificationCenter() {
@@ -92,6 +94,34 @@ export default function NotificationCenter() {
       window.dispatchEvent(new Event("stocksikh:notifications-updated"));
     } catch (err) {
       console.error("Error marking all read:", err);
+    }
+  };
+
+  const deleteNotification = async (notifId, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await axios.delete(`${API}/notifications/${notifId}/`, authConfig());
+      setNotifications((prev) => {
+        const target = prev.find((n) => n.id === notifId);
+        if (target && !target.is_read) {
+          setUnreadCount((c) => Math.max(0, c - 1));
+        }
+        return prev.filter((n) => n.id !== notifId);
+      });
+      window.dispatchEvent(new Event("stocksikh:notifications-updated"));
+    } catch (err) {
+      console.error("Error deleting notification:", err);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      await axios.delete(`${API}/notifications/clear-all/`, authConfig());
+      setNotifications([]);
+      setUnreadCount(0);
+      window.dispatchEvent(new Event("stocksikh:notifications-updated"));
+    } catch (err) {
+      console.error("Error clearing all notifications:", err);
     }
   };
 
@@ -185,15 +215,28 @@ export default function NotificationCenter() {
                 </span>
               )}
             </div>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-[11px] font-bold text-[#94A3B8] hover:text-[#00D09C] flex items-center gap-1 transition-colors cursor-pointer"
-              >
-                <CheckCheck className="w-3.5 h-3.5" />
-                <span>Mark all read</span>
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  className="text-[11px] font-bold text-[#94A3B8] hover:text-[#00D09C] flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Mark all as read"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>Read all</span>
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAllNotifications}
+                  className="text-[11px] font-bold text-[#94A3B8] hover:text-[#EF4444] flex items-center gap-1 transition-colors cursor-pointer ml-1"
+                  title="Clear all notifications"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Notifications List */}
@@ -207,7 +250,7 @@ export default function NotificationCenter() {
                 <div
                   key={n.id}
                   onClick={() => handleNotificationClick(n)}
-                  className={`p-3 rounded-2xl border transition-all cursor-pointer ${
+                  className={`group relative p-3 rounded-2xl border transition-all cursor-pointer ${
                     n.is_read
                       ? "bg-white/[0.02] border-transparent hover:bg-white/[0.05]"
                       : "bg-[#1E293B]/60 border-white/[0.08] hover:border-[#00D09C]/40 shadow-xs"
@@ -217,7 +260,7 @@ export default function NotificationCenter() {
                     <div className="p-2 rounded-xl bg-white/[0.06] border border-white/[0.06] shrink-0 mt-0.5">
                       {getIcon(n.type)}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-xs font-extrabold text-white truncate">
                           {n.title}
@@ -247,6 +290,15 @@ export default function NotificationCenter() {
                         );
                       })()}
                     </div>
+
+                    {/* Delete single notification button */}
+                    <button
+                      onClick={(e) => deleteNotification(n.id, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/20 text-[#64748B] hover:text-[#EF4444] transition-all absolute top-2.5 right-2.5 cursor-pointer"
+                      title="Delete notification"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))

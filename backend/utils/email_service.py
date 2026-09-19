@@ -7,12 +7,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MAIL_USERNAME = os.getenv('MAIL_USERNAME', '')
-MAIL_PASSWORD = os.getenv('MAIL_PASSWORD', '')
+MAIL_USERNAME = os.getenv('MAIL_USERNAME', 'sranjan141507@gmail.com')
+MAIL_PASSWORD = os.getenv('MAIL_PASSWORD', 'dooggfkaspkdufmd')
 MAIL_FROM = os.getenv('MAIL_FROM', MAIL_USERNAME)
 MAIL_PORT = int(os.getenv('MAIL_PORT', 587))
 MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-APP_BASE_URL = os.getenv('APP_BASE_URL', 'http://localhost:3000')
+APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://stock-sikh-three.vercel.app')
 
 
 def send_email_alert(recipient_email: str, subject: str, html_body: str, text_body: Optional[str] = None) -> bool:
