@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
       try {
@@ -16,6 +17,27 @@ export function AuthProvider({ children }) {
       } catch (e) {
         localStorage.removeItem("user");
       }
+    }
+
+    if (token) {
+      axios
+        .get(`${API}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        .then((res) => {
+          if (res.data) {
+            setUser(res.data);
+            localStorage.setItem("user", JSON.stringify(res.data));
+          }
+        })
+        .catch((err) => {
+          if (err.response?.status === 401 || err.response?.status === 404) {
+            console.warn("Session expired or user not found in database, clearing stale session.");
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            setUser(null);
+          }
+        });
     }
   }, []);
 

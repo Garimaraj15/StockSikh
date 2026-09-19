@@ -168,13 +168,14 @@ def get_current_user(
 
     if not user:
         raise HTTPException(
-            status_code=404,
-            detail="User not found"
+            status_code=401,
+            detail="User not found or session expired. Please log in again."
         )
 
     return user
 
 @router.get("/me")
+@router.get("/me/")
 def get_me(
     current_user: User = Depends(get_current_user)
 ):
