@@ -19,6 +19,7 @@ from routes.wallet import (
     get_wallet_balance,
 )
 from routes.stocks import INDIAN_STOCKS, clean_float
+from learning_curriculum import get_daily_lesson
 
 router = APIRouter(prefix="/gamification", tags=["Gamification"])
 
@@ -80,6 +81,7 @@ def serialize_lesson(lesson: dict, progress: LearningProgress | None, market_con
 
 
 @router.get("/daily-lesson")
+@router.get("/daily-lesson/")
 def get_today_learning_lesson(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -93,6 +95,7 @@ def get_today_learning_lesson(
 
 
 @router.post("/daily-lesson/answer")
+@router.post("/daily-lesson/answer/")
 def answer_daily_lesson(
     request: LessonAnswerRequest,
     current_user=Depends(get_current_user),
@@ -196,6 +199,7 @@ def get_learning_streak(current_user, db):
     return streak
 
 @router.get("/status")
+@router.get("/status/")
 def get_gamification_status(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -251,6 +255,7 @@ def get_gamification_status(
     }
 
 @router.post("/claim-quest/{quest_id}")
+@router.post("/claim-quest/{quest_id}/")
 def claim_quest_reward(
     quest_id: str,
     db: Session = Depends(get_db),

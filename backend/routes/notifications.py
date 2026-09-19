@@ -85,6 +85,7 @@ def get_user_notifications(
 
 
 @router.post("/{notif_id}/read")
+@router.post("/{notif_id}/read/")
 def mark_notification_read(
     notif_id: int,
     current_user: User = Depends(get_current_user),
@@ -119,6 +120,7 @@ def mark_notification_read(
 
 
 @router.post("/mark-all-read")
+@router.post("/mark-all-read/")
 def mark_all_read(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)

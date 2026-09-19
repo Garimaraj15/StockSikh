@@ -43,9 +43,23 @@ export default function NotificationCenter() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchNotifications, 15000);
+    const handleSync = () => fetchNotifications();
+    window.addEventListener("stocksikh:notifications-updated", handleSync);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("stocksikh:notifications-updated", handleSync);
+    };
   }, [fetchNotifications, user]);
+
+  const toggleDropdown = () => {
+    const nextState = !isOpen;
+    setIsOpen(nextState);
+    if (nextState) {
+      fetchNotifications();
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -59,11 +73,12 @@ export default function NotificationCenter() {
 
   const markSingleRead = async (notifId) => {
     try {
-      await axios.post(`${API}/notifications/${notifId}/read`, {}, authConfig());
+      await axios.post(`${API}/notifications/${notifId}/read/`, {}, authConfig());
       setNotifications((prev) =>
         prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
+      window.dispatchEvent(new Event("stocksikh:notifications-updated"));
     } catch (err) {
       console.error("Error marking notification read:", err);
     }
@@ -71,9 +86,10 @@ export default function NotificationCenter() {
 
   const markAllRead = async () => {
     try {
-      await axios.post(`${API}/notifications/mark-all-read`, {}, authConfig());
+      await axios.post(`${API}/notifications/mark-all-read/`, {}, authConfig());
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
+      window.dispatchEvent(new Event("stocksikh:notifications-updated"));
     } catch (err) {
       console.error("Error marking all read:", err);
     }
@@ -145,7 +161,7 @@ export default function NotificationCenter() {
     <div className="relative" ref={dropdownRef}>
       {/* Bell Button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleDropdown}
         className="relative p-2.5 rounded-2xl bg-[#111827] hover:bg-[#1E293B] border border-white/[0.08] hover:border-[#00D09C]/40 text-white transition-all flex items-center justify-center focus:outline-none cursor-pointer"
         title="Live Notifications"
       >
