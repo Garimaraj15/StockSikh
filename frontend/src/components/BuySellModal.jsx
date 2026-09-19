@@ -1,20 +1,39 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API, useAuth } from "../context/AuthContext";
-import { X, Sparkles, TrendingUp, TrendingDown, Wallet, AlertCircle, CheckCircle2 } from "lucide-react";
+import { X, Sparkles, TrendingUp, TrendingDown, Wallet, AlertCircle, CheckCircle2, LogIn } from "lucide-react";
 
 export default function BuySellModal({ stock, isOpen, onClose, onTradeComplete, initialMode = "BUY" }) {
-  const { user } = useAuth();
+  const { user, authConfig } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState(initialMode);
   const [quantity, setQuantity] = useState(1);
   const [walletData, setWalletData] = useState(null);
   const [holdings, setHoldings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [fetchingWallet, setFetchingWallet] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
-  const userId = user?.id || 1;
   const currentPrice = stock?.price || 1000.0;
   const cleanSymbol = stock?.symbol || "RELIANCE.NS";
+
+  const loadUserData = useCallback(async () => {
+    if (!user) return;
+    setFetchingWallet(true);
+    try {
+      const [wRes, hRes] = await Promise.all([
+        axios.get(`${API}/wallet/balance`, authConfig()),
+        axios.get(`${API}/portfolio/holdings`, authConfig())
+      ]);
+      setWalletData(wRes.data);
+      setHoldings(hRes.data?.holdings || []);
+    } catch (err) {
+      console.error("Error loading wallet in trade modal:", err);
+    } finally {
+      setFetchingWallet(false);
+    }
+  }, [user, authConfig]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -22,51 +41,49 @@ export default function BuySellModal({ stock, isOpen, onClose, onTradeComplete, 
     setStatusMsg({ type: "", text: "" });
     setQuantity(1);
 
-    // Fetch user wallet balance and current holding
-    axios.get(`${API}/wallet/balance?user_id=${userId}`).then((res) => setWalletData(res.data)).catch(() => {});
-    axios.get(`${API}/portfolio/holdings?user_id=${userId}`).then((res) => setHoldings(res.data?.holdings || [])).catch(() => {});
-  }, [isOpen, initialMode, userId]);
+    if (user) {
+      loadUserData();
+    }
+  }, [isOpen, initialMode, user, loadUserData]);
 
   if (!isOpen || !stock) return null;
 
   const userHolding = holdings.find((h) => h.symbol === cleanSymbol);
   const availableShares = userHolding ? userHolding.quantity : 0;
-  const availableCash = walletData?.virtual_cash || 0;
+  const availableCash = walletData?.virtual_cash ?? 0;
 
   const totalCost = Number((quantity * currentPrice).toFixed(2));
-  const canBuy = availableCash >= totalCost;
-  const canSell = availableShares >= quantity;
+  const canBuy = user && availableCash >= totalCost;
+  const canSell = user && availableShares >= quantity;
 
   const executeTrade = async () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+
     setStatusMsg({ type: "", text: "" });
     setLoading(true);
 
     try {
       if (mode === "BUY") {
         const res = await axios.post(`${API}/portfolio/buy`, {
-          user_id: userId,
           symbol: cleanSymbol,
           quantity: Number(quantity)
-        });
+        }, authConfig());
         setStatusMsg({ type: "success", text: res.data.message });
         if (onTradeComplete) onTradeComplete();
       } else {
         const res = await axios.post(`${API}/portfolio/sell`, {
-          user_id: userId,
           symbol: cleanSymbol,
           quantity: Number(quantity)
-        });
+        }, authConfig());
         setStatusMsg({ type: "success", text: res.data.message });
         if (onTradeComplete) onTradeComplete();
       }
 
       // Refresh balances
-      const [wRes, hRes] = await Promise.all([
-        axios.get(`${API}/wallet/balance?user_id=${userId}`),
-        axios.get(`${API}/portfolio/holdings?user_id=${userId}`)
-      ]);
-      setWalletData(wRes.data);
-      setHoldings(hRes.data?.holdings || []);
+      await loadUserData();
     } catch (err) {
       setStatusMsg({
         type: "error",
@@ -208,25 +225,37 @@ export default function BuySellModal({ stock, isOpen, onClose, onTradeComplete, 
         )}
 
         {/* Action Button */}
-        <button
-          onClick={executeTrade}
-          disabled={loading || (mode === "BUY" && !canBuy) || (mode === "SELL" && !canSell)}
-          className={`w-full py-4 rounded-full font-extrabold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
-            mode === "BUY"
-              ? "bg-[#00D09C] hover:bg-[#00B386] text-slate-950 font-black shadow-[#00D09C]/20"
-              : "bg-[#EB5B3C] hover:bg-[#D94B2C] text-white shadow-[#EB5B3C]/20"
-          }`}
-        >
-          {loading
-            ? "Executing on Live Market..."
-            : mode === "BUY"
-            ? canBuy
-              ? `BUY ${quantity} SHARES (₹${totalCost.toLocaleString("en-IN")})`
-              : "INSUFFICIENT VIRTUAL CASH"
-            : canSell
-            ? `SELL ${quantity} SHARES (₹${totalCost.toLocaleString("en-IN")})`
-            : "NO SHARES TO SELL"}
-        </button>
+        {!user ? (
+          <button
+            onClick={() => navigate("/login")}
+            className="w-full py-4 rounded-full font-extrabold text-sm bg-[#00D09C] hover:bg-[#00B386] text-slate-950 font-black shadow-lg shadow-[#00D09C]/20 transition-all flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02]"
+          >
+            <LogIn className="w-4 h-4" />
+            <span>LOG IN TO TRADE (CLAIM ₹10,000 FREE)</span>
+          </button>
+        ) : (
+          <button
+            onClick={executeTrade}
+            disabled={loading || fetchingWallet || (mode === "BUY" && !canBuy) || (mode === "SELL" && !canSell)}
+            className={`w-full py-4 rounded-full font-extrabold text-sm shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+              mode === "BUY"
+                ? "bg-[#00D09C] hover:bg-[#00B386] text-slate-950 font-black shadow-[#00D09C]/20"
+                : "bg-[#EB5B3C] hover:bg-[#D94B2C] text-white shadow-[#EB5B3C]/20"
+            }`}
+          >
+            {loading
+              ? "Executing on Live Market..."
+              : fetchingWallet
+              ? "Syncing Wallet Balance..."
+              : mode === "BUY"
+              ? canBuy
+                ? `BUY ${quantity} SHARES (₹${totalCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })})`
+                : `INSUFFICIENT CASH (Balance: ₹${availableCash.toLocaleString("en-IN", { minimumFractionDigits: 2 })})`
+              : canSell
+              ? `SELL ${quantity} SHARES (₹${totalCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })})`
+              : `NO SHARES TO SELL (Holdings: ${availableShares})`}
+          </button>
+        )}
       </div>
     </div>
   );
