@@ -576,7 +576,7 @@ CRITICAL INSTRUCTIONS:
 
 User Question: "{message}"
 """
-            response = gemini_model.generate_content(prompt)
+            response = gemini_model.generate_content(prompt, request_options={"timeout": 15})
             if response and response.text:
                 return {"reply": response.text.strip()}
         except Exception as e:
